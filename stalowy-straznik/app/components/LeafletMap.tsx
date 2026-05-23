@@ -570,6 +570,7 @@ export default function LeafletMap() {
   const simulationTimersRef = useRef<number[]>([]);
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [selectedAttackType, setSelectedAttackType] = useState<string>("power");
+  const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
 
   useEffect(() => {
     mapViewRef.current = mapView;
@@ -1236,6 +1237,22 @@ export default function LeafletMap() {
             <button type="button" onClick={stopSimulation} className="rounded px-2 py-2 bg-white/5">
               Stop
             </button>
+          </div>
+
+          <div className="mt-3 text-sm">
+            <label className="flex items-center gap-3">
+              <span className="text-xs text-zinc-300">Szybkość:</span>
+              <input
+                type="range"
+                min={0.25}
+                max={4}
+                step={0.25}
+                value={simulationSpeed}
+                onChange={(e) => setSimulationSpeed(Number(e.target.value))}
+                className="flex-1"
+              />
+              <span className="ml-2 font-mono text-sm">{simulationSpeed.toFixed(2)}x</span>
+            </label>
           </div>
         </div>
 
