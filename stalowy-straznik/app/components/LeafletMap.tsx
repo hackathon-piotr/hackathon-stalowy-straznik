@@ -567,6 +567,7 @@ export default function LeafletMap() {
 
   // Simulation state and layer
   const simulationLayerRef = useRef<Layer | null>(null);
+  const simulationTimersRef = useRef<number[]>([]);
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [selectedAttackType, setSelectedAttackType] = useState<string>("power");
 
@@ -1010,50 +1011,132 @@ export default function LeafletMap() {
     simulationLayerRef.current = simLayer;
     simLayer.addTo(map);
 
-    // sequential animation: wave through affected features
+    // helper to compute start point off-map
+    function getStartPoint(targetLatLng: [number, number]) {
+      const center = map.getCenter();
+      const bounds = map.getBounds();
+      const latSpan = bounds.getNorth() - bounds.getSouth();
+      const lngSpan = bounds.getEast() - bounds.getWest();
+      const dx = targetLatLng[1] - center.lng;
+      const dy = targetLatLng[0] - center.lat;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const factor = Math.max(latSpan, lngSpan) * 1.6;
+      const startLat = targetLatLng[0] + (dy / len) * factor;
+      const startLng = targetLatLng[1] + (dx / len) * factor;
+      return [startLat, startLng] as [number, number];
+    }
+
+    // animate projectile from start to target
+    function launchProjectile(start: [number, number], target: [number, number], type: "rakieta" | "dron", severity: number) {
+      const projectileIcon = L.divIcon({ html: type === "rakieta" ? "🚀" : "🛸", className: "projectile-icon" });
+      const marker = L.marker(start as LatLngExpression, { icon: projectileIcon, interactive: false }).addTo(simLayer);
+      const trail = L.polyline([start], { color: "#ffb86b", weight: 2, opacity: 0.9 }).addTo(simLayer);
+
+      const distance = L.latLng(start).distanceTo(L.latLng(target)); // meters
+      const speed = type === "rakieta" ? 600 : 60; // m/s
+      const durationMs = Math.max(500, (distance / speed) * 1000);
+      const steps = Math.max(20, Math.ceil(durationMs / 40));
+      let step = 0;
+
+      const intervalId = window.setInterval(() => {
+        step += 1;
+        const t = step / steps;
+        const curLat = start[0] + (target[0] - start[0]) * t;
+        const curLng = start[1] + (target[1] - start[1]) * t;
+        const cur = [curLat, curLng] as [number, number];
+        marker.setLatLng(cur as LatLngExpression);
+        trail.addLatLng(cur as LatLngExpression);
+
+        if (step >= steps) {
+          window.clearInterval(intervalId);
+          try {
+            simLayer.removeLayer(marker);
+          } catch (e) {}
+
+          // explosion
+          const exp = L.circle(target as LatLngExpression, {
+            radius: 8 + severity * 30,
+            color: "#ff5f5f",
+            fillColor: "#ff9b9b",
+            fillOpacity: 0.9,
+            weight: 2,
+          }).addTo(simLayer);
+
+          let r = 8 + severity * 30;
+          const expInterval = window.setInterval(() => {
+            r += 6;
+            try {
+              (exp as any).setRadius(r);
+              exp.setStyle({ fillOpacity: Math.max(0, 0.9 - r / 120) });
+            } catch (e) {}
+
+            if (r > 80 + severity * 40) {
+              window.clearInterval(expInterval);
+              try {
+                simLayer.removeLayer(exp);
+              } catch (e) {}
+            }
+          }, 60);
+
+          // mark damaged object briefly
+          const damaged = L.circleMarker(target as LatLngExpression, {
+            radius: 6 + severity * 8,
+            color: "#a11",
+            fillColor: "#a11",
+            fillOpacity: 0.95,
+            weight: 2,
+          }).addTo(simLayer);
+
+          const toId = window.setTimeout(() => {
+            try {
+              simLayer.removeLayer(damaged);
+            } catch (e) {}
+          }, 4500);
+
+          simulationTimersRef.current.push(expInterval as unknown as number, toId as unknown as number);
+        }
+      }, Math.max(20, Math.round(durationMs / steps)));
+
+      simulationTimersRef.current.push(intervalId as unknown as number);
+    }
+
+    // launch projectiles with small stagger
     affected.forEach((feature, i) => {
       const pos = getFeaturePosition(feature);
       if (!pos) return;
       const risk = calculateFeatureRisk(feature, features, graph);
       const severity = (risk?.value ?? 0) / 100;
-      const delay = i * 300;
+      const delay = i * 350;
 
-      setTimeout(() => {
-        const circle = L.circleMarker(pos, {
-          radius: 6 + severity * 14,
-          color: "#ff2d2d",
-          fillColor: "#ff2d2d",
-          fillOpacity: 0.5 + severity * 0.35,
-          weight: 2,
-        }).addTo(simLayer);
+      const type = attackType === "strategic" ? "rakieta" : "dron";
 
-        const icon = L.divIcon({
-          className: "sim-icon",
-          html: `<span style="font-size:${14 + severity * 12}px;line-height:1">⚠️</span>`,
-        });
-
-        const marker = L.marker(pos as LatLngExpression, { icon, interactive: false }).addTo(simLayer);
-
-        // pulse effect: grow then remove
-        setTimeout(() => {
-          try {
-            simLayer.removeLayer(marker);
-            simLayer.removeLayer(circle);
-          } catch (e) {
-            // ignore
-          }
-        }, 1400 + Math.round(severity * 800));
+      const timeoutId = window.setTimeout(() => {
+        const start = getStartPoint(pos);
+        launchProjectile(start, pos, type as "rakieta" | "dron", severity);
       }, delay);
+
+      simulationTimersRef.current.push(timeoutId as unknown as number);
     });
 
-    // cleanup
-    setTimeout(() => {
+    // cleanup after all animations
+    const totalDuration = Math.max(3000, affected.length * 350 + 2500);
+    const cleanupId = window.setTimeout(() => {
       try {
         simulationLayerRef.current?.remove();
       } catch (e) {}
       simulationLayerRef.current = null;
+      // clear timers
+      simulationTimersRef.current.forEach((id) => {
+        try {
+          window.clearInterval(id);
+          window.clearTimeout(id);
+        } catch (e) {}
+      });
+      simulationTimersRef.current = [];
       setSimulationRunning(false);
-    }, Math.max(3000, affected.length * 300 + 1800));
+    }, totalDuration + 500);
+
+    simulationTimersRef.current.push(cleanupId as unknown as number);
   }
 
   function stopSimulation() {
