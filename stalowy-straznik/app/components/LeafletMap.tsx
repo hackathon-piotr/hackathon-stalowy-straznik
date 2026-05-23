@@ -561,6 +561,15 @@ export default function LeafletMap() {
   const mapViewRef = useRef<MapView>("standard");
   const activeInfrastructureLayersRef = useRef(activeInfrastructureLayers);
 
+  // Refs to keep latest geojson/graph for simulation outside initializeMap scope
+  const geojsonRef = useRef<FeatureCollection<Geometry, GeoJsonProperties> | null>(null);
+  const graphRef = useRef<DependencyGraph | null>(null);
+
+  // Simulation state and layer
+  const simulationLayerRef = useRef<Layer | null>(null);
+  const [simulationRunning, setSimulationRunning] = useState(false);
+  const [selectedAttackType, setSelectedAttackType] = useState<string>("power");
+
   useEffect(() => {
     mapViewRef.current = mapView;
   }, [mapView]);
@@ -660,6 +669,10 @@ export default function LeafletMap() {
         graphResponse.ok && !cancelled
           ? ((await graphResponse.json()) as DependencyGraph)
           : null;
+
+      // expose for simulation controls
+      geojsonRef.current = geojson;
+      graphRef.current = graph;
 
       infrastructureLayerKeys.forEach((layer) => {
         const config = infrastructureLayers[layer];
@@ -888,6 +901,170 @@ export default function LeafletMap() {
     });
   }, [activeInfrastructureLayers]);
 
+  async function runSimulation(attackType: string = selectedAttackType) {
+    const map = mapInstance.current;
+    const geojson = geojsonRef.current;
+    const graph = graphRef.current;
+
+    if (!map || !geojson) return;
+    if (simulationRunning) return;
+
+    setSimulationRunning(true);
+
+    const features = geojson.features;
+    // choose initial targets based on attack type
+    const targets = features.filter((feature) => {
+      const tags = (feature.properties?.tags ?? {}) as Record<string, string>;
+      if (attackType === "power") {
+        return (
+          String(feature.properties?.layer) === "power" ||
+          tags.power === "plant" ||
+          tags.power === "substation"
+        );
+      }
+
+      if (attackType === "strategic") {
+        return String(feature.properties?.layer) === "strategic";
+      }
+
+      if (attackType === "hospitals") {
+        return String(feature.properties?.layer) === "hospitals";
+      }
+
+      // fallback: match layer name
+      return String(feature.properties?.layer) === attackType;
+    });
+
+    const affectedSet = new Set<Feature<Geometry, GeoJsonProperties>>();
+    targets.forEach((t) => affectedSet.add(t));
+
+    // propagate via dependency graph (breadth-first up to depth 2)
+    if (graph) {
+      const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+      const startNodeIds = graph.nodes
+        .filter((node) =>
+          targets.some((f) => {
+            const fid = String(f.id ?? f.properties?.id ?? "");
+            const fname = String(f.properties?.name ?? "").toLowerCase();
+            return (
+              node.source?.toLowerCase().includes(fid.toLowerCase()) ||
+              node.name.toLowerCase() === fname
+            );
+          }),
+        )
+        .map((n) => n.id);
+
+      const queue: Array<{ id: string; depth: number }> = startNodeIds.map((id) => ({ id, depth: 0 }));
+      const visited = new Set(startNodeIds);
+
+      while (queue.length) {
+        const { id, depth } = queue.shift()!;
+        const node = nodeById.get(id);
+        if (!node) continue;
+
+        // match node back to features
+        features.forEach((f) => {
+          const fid = String(f.id ?? f.properties?.id ?? "");
+          const fname = String(f.properties?.name ?? "").toLowerCase();
+          if (node.source?.toLowerCase().includes(fid.toLowerCase()) || node.name.toLowerCase() === fname) {
+            affectedSet.add(f);
+          }
+        });
+
+        if (depth < 2) {
+          graph.edges.forEach((edge) => {
+            const neighbor = edge.source === id ? edge.target : edge.source === id ? edge.source : null;
+            if (!neighbor) {
+              // check both directions
+              if (edge.source === id && !visited.has(edge.target)) {
+                visited.add(edge.target);
+                queue.push({ id: edge.target, depth: depth + 1 });
+              }
+              if (edge.target === id && !visited.has(edge.source)) {
+                visited.add(edge.source);
+                queue.push({ id: edge.source, depth: depth + 1 });
+              }
+            } else if (!visited.has(neighbor)) {
+              visited.add(neighbor);
+              queue.push({ id: neighbor, depth: depth + 1 });
+            }
+          });
+        }
+      }
+    }
+
+    const affected = Array.from(affectedSet.values());
+
+    const L = await import("leaflet");
+
+    // create simulation layer
+    if (simulationLayerRef.current) {
+      try {
+        simulationLayerRef.current.remove();
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const simLayer = L.layerGroup();
+    simulationLayerRef.current = simLayer;
+    simLayer.addTo(map);
+
+    // sequential animation: wave through affected features
+    affected.forEach((feature, i) => {
+      const pos = getFeaturePosition(feature);
+      if (!pos) return;
+      const risk = calculateFeatureRisk(feature, features, graph);
+      const severity = (risk?.value ?? 0) / 100;
+      const delay = i * 300;
+
+      setTimeout(() => {
+        const circle = L.circleMarker(pos, {
+          radius: 6 + severity * 14,
+          color: "#ff2d2d",
+          fillColor: "#ff2d2d",
+          fillOpacity: 0.5 + severity * 0.35,
+          weight: 2,
+        }).addTo(simLayer);
+
+        const icon = L.divIcon({
+          className: "sim-icon",
+          html: `<span style="font-size:${14 + severity * 12}px;line-height:1">⚠️</span>`,
+        });
+
+        const marker = L.marker(pos as LatLngExpression, { icon, interactive: false }).addTo(simLayer);
+
+        // pulse effect: grow then remove
+        setTimeout(() => {
+          try {
+            simLayer.removeLayer(marker);
+            simLayer.removeLayer(circle);
+          } catch (e) {
+            // ignore
+          }
+        }, 1400 + Math.round(severity * 800));
+      }, delay);
+    });
+
+    // cleanup
+    setTimeout(() => {
+      try {
+        simulationLayerRef.current?.remove();
+      } catch (e) {}
+      simulationLayerRef.current = null;
+      setSimulationRunning(false);
+    }, Math.max(3000, affected.length * 300 + 1800));
+  }
+
+  function stopSimulation() {
+    try {
+      simulationLayerRef.current?.remove();
+    } catch (e) {}
+
+    simulationLayerRef.current = null;
+    setSimulationRunning(false);
+  }
+
   return (
     <main className="relative min-h-screen w-full overflow-hidden bg-stone-950">
       <div ref={mapElement} className="h-screen w-full" aria-label="Mapa" />
@@ -953,6 +1130,32 @@ export default function LeafletMap() {
             ))}
           </div>
         </div>
+        <div className="pointer-events-auto mt-4 rounded-md bg-white/10 p-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Symulacje</div>
+          <div className="mt-3 flex items-center gap-2 text-sm">
+            <select
+              value={selectedAttackType}
+              onChange={(e) => setSelectedAttackType(e.target.value)}
+              className="rounded bg-white/5 p-2 text-sm text-white"
+            >
+              <option value="power">Atak na elektrownie</option>
+              <option value="strategic">Atak na obiekty strategiczne</option>
+              <option value="hospitals">Atak na szpitale</option>
+            </select>
+            <button
+              type="button"
+              disabled={simulationRunning}
+              onClick={() => runSimulation()}
+              className={`rounded px-3 py-2 ${simulationRunning ? "bg-gray-500" : "bg-red-600 hover:bg-red-700"}`}
+            >
+              {simulationRunning ? "Symulacja..." : "Uruchom symulację"}
+            </button>
+            <button type="button" onClick={stopSimulation} className="rounded px-2 py-2 bg-white/5">
+              Stop
+            </button>
+          </div>
+        </div>
+
         <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
           <div className="rounded-md bg-white/10 p-3">
             <div className="text-xl font-semibold">3</div>
