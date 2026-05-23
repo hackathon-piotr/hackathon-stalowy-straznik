@@ -2,12 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import type {
+  Layer,
   LatLngExpression,
   Map as LeafletMapInstance,
   TileLayer as LeafletTileLayer,
 } from "leaflet";
+import type { Feature, GeoJsonObject, GeoJsonProperties, Geometry } from "geojson";
 
 type MapView = "standard" | "satellite" | "geoportal" | "nasa" | "sentinel";
+type InfrastructureLayer =
+  | "water"
+  | "power"
+  | "sewer"
+  | "bts"
+  | "fiber"
+  | "rail"
+  | "bridges"
+  | "hospitals"
+  | "warehouses"
+  | "fuel"
+  | "shelters"
+  | "logistics"
+  | "strategic";
 
 type TileLayerConfig = {
   label: string;
@@ -52,6 +68,117 @@ const tileLayers: Record<MapView, TileLayerConfig> = {
 };
 
 const center: LatLngExpression = [50.5826, 22.0536];
+const utilityWmsUrl = "https://stalowawola.geoportal2.pl/map/geoportal/wms.php?typ=g&";
+
+const infrastructureLayers: Record<
+  InfrastructureLayer,
+  {
+    label: string;
+    color: string;
+    source: "GESUT WMS" | "OpenStreetMap";
+    wmsLayer?: string;
+    geojsonLayer?: string;
+  }
+> = {
+  water: {
+    label: "wodociągi",
+    color: "#38bdf8",
+    source: "GESUT WMS",
+    wmsLayer: "siec_wodociagowa",
+  },
+  power: {
+    label: "energetyka",
+    color: "#facc15",
+    source: "GESUT WMS",
+    wmsLayer: "siec_elektroenergetyczna",
+  },
+  sewer: {
+    label: "kanalizacja",
+    color: "#06b6d4",
+    source: "GESUT WMS",
+    wmsLayer: "siec_kanalizacyjna",
+  },
+  bts: {
+    label: "BTS",
+    color: "#a78bfa",
+    source: "OpenStreetMap",
+    geojsonLayer: "bts",
+  },
+  fiber: {
+    label: "światłowody",
+    color: "#c084fc",
+    source: "GESUT WMS",
+    wmsLayer: "siec_telekomunikacyjna",
+  },
+  rail: {
+    label: "kolej",
+    color: "#fb923c",
+    source: "OpenStreetMap",
+    geojsonLayer: "rail",
+  },
+  bridges: {
+    label: "mosty",
+    color: "#f97316",
+    source: "OpenStreetMap",
+    geojsonLayer: "bridges",
+  },
+  hospitals: {
+    label: "szpitale",
+    color: "#22c55e",
+    source: "OpenStreetMap",
+    geojsonLayer: "hospitals",
+  },
+  warehouses: {
+    label: "magazyny",
+    color: "#94a3b8",
+    source: "OpenStreetMap",
+    geojsonLayer: "warehouses",
+  },
+  fuel: {
+    label: "stacje paliw",
+    color: "#ef4444",
+    source: "OpenStreetMap",
+    geojsonLayer: "fuel",
+  },
+  shelters: {
+    label: "schrony",
+    color: "#14b8a6",
+    source: "OpenStreetMap",
+    geojsonLayer: "shelters",
+  },
+  logistics: {
+    label: "centra logistyczne",
+    color: "#e879f9",
+    source: "OpenStreetMap",
+    geojsonLayer: "logistics",
+  },
+  strategic: {
+    label: "obiekty strategiczne",
+    color: "#f43f5e",
+    source: "OpenStreetMap",
+    geojsonLayer: "strategic",
+  },
+};
+
+const infrastructureLayerKeys = Object.keys(
+  infrastructureLayers,
+) as InfrastructureLayer[];
+
+const initialInfrastructureLayers: Record<InfrastructureLayer, boolean> = {
+  water: true,
+  power: true,
+  sewer: true,
+  bts: true,
+  fiber: true,
+  rail: true,
+  bridges: true,
+  hospitals: true,
+  warehouses: true,
+  fuel: true,
+  shelters: true,
+  logistics: true,
+  strategic: true,
+};
 
 const posts = [
   {
@@ -73,14 +200,25 @@ const posts = [
 
 export default function LeafletMap() {
   const [mapView, setMapView] = useState<MapView>("standard");
+  const [activeInfrastructureLayers, setActiveInfrastructureLayers] = useState(
+    initialInfrastructureLayers,
+  );
   const mapElement = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<LeafletMapInstance | null>(null);
   const tileLayerInstance = useRef<LeafletTileLayer | null>(null);
+  const infrastructureLayerInstances = useRef<
+    Partial<Record<InfrastructureLayer, Layer>>
+  >({});
   const mapViewRef = useRef<MapView>("standard");
+  const activeInfrastructureLayersRef = useRef(activeInfrastructureLayers);
 
   useEffect(() => {
     mapViewRef.current = mapView;
   }, [mapView]);
+
+  useEffect(() => {
+    activeInfrastructureLayersRef.current = activeInfrastructureLayers;
+  }, [activeInfrastructureLayers]);
 
   useEffect(() => {
     if (!mapElement.current || mapInstance.current) {
@@ -132,7 +270,85 @@ export default function LeafletMap() {
           .bindPopup(`<strong>${post.name}</strong><br />${post.status}`);
       });
 
+      infrastructureLayerKeys.forEach((layer) => {
+        const config = infrastructureLayers[layer];
+
+        if (!config.wmsLayer) {
+          infrastructureLayerInstances.current[layer] = L.layerGroup();
+          return;
+        }
+
+        infrastructureLayerInstances.current[layer] = L.tileLayer.wms(utilityWmsUrl, {
+          layers: config.wmsLayer,
+          format: "image/png",
+          transparent: true,
+          opacity: 0.78,
+          version: "1.3.0",
+          attribution: "GESUT: Powiat Stalowowolski / Geoportal2",
+        });
+      });
+
+      infrastructureLayerKeys.forEach((layer) => {
+        if (activeInfrastructureLayersRef.current[layer]) {
+          infrastructureLayerInstances.current[layer]?.addTo(map);
+        }
+      });
+
       mapInstance.current = map;
+
+      const response = await fetch("/data/stalowa-wola-infrastructure.geojson");
+
+      if (!response.ok || cancelled) {
+        return;
+      }
+
+      const geojson = (await response.json()) as GeoJsonObject;
+
+      infrastructureLayerKeys.forEach((layer) => {
+        const config = infrastructureLayers[layer];
+
+        if (!config.geojsonLayer) {
+          return;
+        }
+
+        const geoJsonLayer = L.geoJSON(geojson, {
+          filter: (feature?: Feature<Geometry, GeoJsonProperties>) =>
+            feature?.properties?.layer === config.geojsonLayer,
+          pointToLayer: (_feature, latlng) =>
+            L.circleMarker(latlng, {
+              color: "#ffffff",
+              fillColor: config.color,
+              fillOpacity: 0.92,
+              radius:
+                layer === "bts" || layer === "hospitals" || layer === "strategic"
+                  ? 7
+                  : 5,
+              weight: 1.5,
+            }),
+          style: () => ({
+            color: config.color,
+            fillColor: config.color,
+            fillOpacity: 0.22,
+            opacity: 0.88,
+            weight: layer === "bridges" || layer === "strategic" ? 5 : 3,
+            dashArray: layer === "rail" ? "7 5" : undefined,
+          }),
+          onEachFeature: (feature, leafletLayer) => {
+            const properties = feature.properties ?? {};
+            const name = properties.name ?? config.label;
+            leafletLayer.bindPopup(
+              `<strong>${config.label}</strong><br />${name}<br /><small>${config.source}</small>`,
+            );
+          },
+        });
+
+        infrastructureLayerInstances.current[layer]?.remove();
+        infrastructureLayerInstances.current[layer] = geoJsonLayer;
+
+        if (activeInfrastructureLayersRef.current[layer]) {
+          geoJsonLayer.addTo(map);
+        }
+      });
     }
 
     initializeMap();
@@ -140,6 +356,7 @@ export default function LeafletMap() {
     return () => {
       cancelled = true;
       tileLayerInstance.current = null;
+      infrastructureLayerInstances.current = {};
       mapInstance.current?.remove();
       mapInstance.current = null;
     };
@@ -167,6 +384,29 @@ export default function LeafletMap() {
     updateTileLayer();
   }, [mapView]);
 
+  useEffect(() => {
+    const map = mapInstance.current;
+
+    if (!map) {
+      return;
+    }
+
+    infrastructureLayerKeys.forEach((layer) => {
+      const layerGroup = infrastructureLayerInstances.current[layer];
+
+      if (!layerGroup) {
+        return;
+      }
+
+      if (activeInfrastructureLayers[layer]) {
+        layerGroup.addTo(map);
+        return;
+      }
+
+      layerGroup.remove();
+    });
+  }, [activeInfrastructureLayers]);
+
   return (
     <main className="relative min-h-screen w-full overflow-hidden bg-stone-950">
       <div ref={mapElement} className="h-screen w-full" aria-label="Mapa" />
@@ -192,6 +432,41 @@ export default function LeafletMap() {
               {tileLayers[view].label}
             </button>
           ))}
+        </div>
+        <div className="pointer-events-auto mt-4 rounded-md bg-white/10 p-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
+            Warstwy
+          </div>
+          <div className="mt-3 grid max-h-[42vh] gap-2 overflow-y-auto pr-1 text-sm">
+            {infrastructureLayerKeys.map((layer) => (
+              <label
+                key={layer}
+                className="flex cursor-pointer items-center gap-3 rounded px-2 py-1.5 text-zinc-100 transition hover:bg-white/10"
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-red-500"
+                  checked={activeInfrastructureLayers[layer]}
+                  onChange={() =>
+                    setActiveInfrastructureLayers((currentLayers) => ({
+                      ...currentLayers,
+                      [layer]: !currentLayers[layer],
+                    }))
+                  }
+                />
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: infrastructureLayers[layer].color }}
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  {infrastructureLayers[layer].label}
+                </span>
+                <span className="text-[10px] uppercase tracking-wide text-zinc-400">
+                  {infrastructureLayers[layer].source === "GESUT WMS" ? "GESUT" : "OSM"}
+                </span>
+              </label>
+            ))}
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
           <div className="rounded-md bg-white/10 p-3">
