@@ -1150,127 +1150,84 @@ export default function LeafletMap() {
   }
 
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-stone-950">
-      <div ref={mapElement} className="h-screen w-full" aria-label="Mapa" />
+    <main className="relative min-h-screen w-full overflow-hidden bg-zinc-950 text-white">
+      <header className="flex items-center justify-between px-4 py-3 bg-zinc-900/95 border-b border-white/10">
+        <div className="text-sm font-semibold">City Resilience & Infrastructure Awareness Platform</div>
+        <div className="flex items-center gap-6 text-sm">
+          <div className="flex items-center gap-2"><span className="font-semibold">Status miasta:</span><span className="text-green-400">Operational</span></div>
+          <div className="flex items-center gap-2"><span className="font-semibold">Alerty:</span><span className="text-yellow-400">2</span></div>
+          <div className="flex items-center gap-2"><span className="font-semibold">Pogoda:</span><span>Sunny 22°C</span></div>
+          <div className="flex items-center gap-2"><span className="font-semibold">Łączność:</span><span className="text-green-400">OK</span></div>
+        </div>
+      </header>
 
-      <section className="pointer-events-none absolute left-4 top-4 z-[500] w-[min(360px,calc(100vw-2rem))] rounded-lg border border-white/20 bg-zinc-950/88 p-4 text-white shadow-xl backdrop-blur">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
-          Stalowy Straznik
-        </div>
-        <h1 className="mt-2 text-2xl font-semibold">Mapa operacyjna</h1>
-        <div className="pointer-events-auto mt-4 grid grid-cols-2 gap-1 rounded-md bg-white/10 p-1 text-sm font-medium sm:grid-cols-3">
-          {(Object.keys(tileLayers) as MapView[]).map((view) => (
-            <button
-              key={view}
-              type="button"
-              className={`rounded px-3 py-2 transition ${
-                mapView === view
-                  ? "bg-white text-zinc-950 shadow"
-                  : "text-zinc-200 hover:bg-white/10"
-              }`}
-              aria-pressed={mapView === view}
-              onClick={() => setMapView(view)}
-            >
-              {tileLayers[view].label}
-            </button>
-          ))}
-        </div>
-        <div className="pointer-events-auto mt-4 rounded-md bg-white/10 p-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">
-            Warstwy
-          </div>
-          <div className="mt-3 grid max-h-[42vh] gap-2 overflow-y-auto pr-1 text-sm">
-            {infrastructureLayerKeys.map((layer) => (
-              <label
-                key={layer}
-                className="flex cursor-pointer items-center gap-3 rounded px-2 py-1.5 text-zinc-100 transition hover:bg-white/10"
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-red-500"
-                  checked={activeInfrastructureLayers[layer]}
-                  onChange={() =>
-                    setActiveInfrastructureLayers((currentLayers) => ({
-                      ...currentLayers,
-                      [layer]: !currentLayers[layer],
-                    }))
-                  }
-                />
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: infrastructureLayers[layer].color }}
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  {infrastructureLayers[layer].label}
-                </span>
-                <span className="text-[10px] uppercase tracking-wide text-zinc-400">
-                  {infrastructureLayers[layer].source === "GESUT WMS"
-                    ? "GESUT"
-                    : infrastructureLayers[layer].source === "Model"
-                      ? "GRAF"
-                      : "OSM"}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-        <div className="pointer-events-auto mt-4 rounded-md bg-white/10 p-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-300">Symulacje</div>
-          <div className="mt-3 flex items-center gap-2 text-sm">
-            <select
-              value={selectedAttackType}
-              onChange={(e) => setSelectedAttackType(e.target.value)}
-              className="rounded bg-white/5 p-2 text-sm text-white"
-            >
-              <option value="power">Atak na elektrownie</option>
-              <option value="strategic">Atak na obiekty strategiczne</option>
-              <option value="hospitals">Atak na szpitale</option>
-            </select>
-            <button
-              type="button"
-              disabled={simulationRunning}
-              onClick={() => runSimulation()}
-              className={`rounded px-3 py-2 ${simulationRunning ? "bg-gray-500" : "bg-red-600 hover:bg-red-700"}`}
-            >
-              {simulationRunning ? "Symulacja..." : "Uruchom symulację"}
-            </button>
-            <button type="button" onClick={stopSimulation} className="rounded px-2 py-2 bg-white/5">
-              Stop
-            </button>
-          </div>
+      <div className="flex h-[calc(100vh-120px)]">
+        <div className="w-2/3 border-r border-white/10 relative">
+          <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
 
-          <div className="mt-3 text-sm">
-            <label className="flex items-center gap-3">
-              <span className="text-xs text-zinc-300">Szybkość:</span>
-              <input
-                type="range"
-                min={0.25}
-                max={4}
-                step={0.25}
-                value={simulationSpeed}
-                onChange={(e) => setSimulationSpeed(Number(e.target.value))}
-                className="flex-1"
-              />
-              <span className="ml-2 font-mono text-sm">{simulationSpeed.toFixed(2)}x</span>
-            </label>
+          <div className="absolute left-6 top-6 z-50 pointer-events-auto">
+            <div className="bg-white/5 p-3 rounded text-sm">
+              <div className="font-semibold mb-2">Warstwy</div>
+              <div className="flex flex-col gap-2 text-zinc-100">
+                <div className="flex items-center gap-2"><span>⚡</span> energia</div>
+                <div className="flex items-center gap-2"><span>💧</span> woda</div>
+                <div className="flex items-center gap-2"><span>🏥</span> szpital</div>
+                <div className="flex items-center gap-2"><span>📡</span> telekom</div>
+                <div className="flex items-center gap-2"><span>🚆</span> transport</div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-          <div className="rounded-md bg-white/10 p-3">
-            <div className="text-xl font-semibold">3</div>
-            <div className="text-zinc-300">posterunki</div>
+        <aside className="w-1/3 p-4 overflow-y-auto pointer-events-auto bg-zinc-900/80">
+          <h2 className="text-lg font-semibold">City Status</h2>
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="bg-white/5 p-3 rounded">
+              <div className="text-sm text-zinc-300">Resilience Score</div>
+              <div className="text-2xl font-bold">{(() => { const f=geojsonRef.current?.features; if(!f) return '—'; const vals=f.map(fe=>calculateFeatureRisk(fe,f,graphRef.current).value); const avg = Math.round(vals.reduce((a,b)=>a+b,0)/Math.max(1,vals.length)); return `${avg}/100`; })()}</div>
+            </div>
+            <div className="bg-white/5 p-3 rounded">
+              <div className="text-sm text-zinc-300">Active Alerts</div>
+              <div className="text-2xl font-bold">2</div>
+            </div>
+            <div className="bg-white/5 p-3 rounded">
+              <div className="text-sm text-zinc-300">Critical Nodes</div>
+              <div className="text-2xl font-bold">{(() => { const f=geojsonRef.current?.features; if(!f) return '—'; const vals=f.map(fe=>({v:calculateFeatureRisk(fe,f,graphRef.current).value, name:fe.properties?.name})).filter(x=>x.v>=80); return vals.length; })()}</div>
+            </div>
+            <div className="bg-white/5 p-3 rounded">
+              <div className="text-sm text-zinc-300">Infrastructure Availability</div>
+              <div className="text-2xl font-bold">97.2%</div>
+            </div>
           </div>
-          <div className="rounded-md bg-white/10 p-3">
-            <div className="text-xl font-semibold">4.2 km</div>
-            <div className="text-zinc-300">strefa</div>
+
+          <h3 className="mt-4 font-semibold">Top Critical Objects</h3>
+          <table className="w-full text-sm mt-2 table-auto">
+            <thead><tr className="text-left"><th className="pb-2">Obiekt</th><th className="pb-2">Risk</th><th className="pb-2">Zależności</th><th className="pb-2">Backup</th></tr></thead>
+            <tbody>
+              {(() => { const f=geojsonRef.current?.features; if(!f) return null; const rows=f.map(fe=>({name:fe.properties?.name||'?', risk:calculateFeatureRisk(fe,f,graphRef.current).value, deps: (fe.properties?.tags?.dependency_count)||0, backup: fe.properties?.tags?.backup? '✅':'❌'})).sort((a,b)=>b.risk-a.risk).slice(0,6); return rows.map((r,i)=>(<tr key={i}><td className="py-1">{r.name}</td><td>{r.risk}</td><td>{r.deps}</td><td>{r.backup}</td></tr>)) })()
+              }
+            </tbody>
+          </table>
+
+          <h3 className="mt-4 font-semibold">Impact Analysis</h3>
+          <div className="bg-white/5 p-3 rounded text-sm mt-2">Kliknij obiekt na mapie, by zobaczyć analizę wpływu.</div>
+
+          <div className="mt-4">
+            <div className="text-sm font-semibold">Cascading Failure Simulation</div>
+            <div className="mt-2 text-sm">Kliknij obiekt na mapie, następnie użyj symulacji (panel na mapie) aby zobaczyć propagację awarii.</div>
           </div>
-          <div className="rounded-md bg-white/10 p-3">
-            <div className="text-xl font-semibold">12</div>
-            <div className="text-zinc-300">zoom</div>
-          </div>
-        </div>
-      </section>
+        </aside>
+      </div>
+
+      <footer className="h-28 border-t border-white/10 bg-zinc-950/95 p-3 overflow-auto">
+        <div className="font-semibold mb-2">Timeline / Event Stream</div>
+        <ul className="text-sm">
+          <li>12:01 - Water pressure anomaly</li>
+          <li>12:04 - Backup power activated</li>
+          <li>12:08 - Network rerouted</li>
+          <li>12:15 - Incident resolved</li>
+        </ul>
+      </footer>
     </main>
   );
 }
