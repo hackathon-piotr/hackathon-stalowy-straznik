@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "name": "stalowa-wola-dependency-graph",
+  "status": "first-stage public/inferred model",
+  "notes": [
+    "Model roboczy do wizualizacji zaleznosci. Nie jest danymi operatorow infrastruktury.",
+    "Wezly z pozycja pochodza z publicznych danych OSM lub sa publicznie nazwanymi obiektami.",
+    "Relacje sa hipotezami analitycznymi do walidacji z operatorami i administracja."
+  ],
+  "nodes": [
+    {
+      "id": "resource_energy",
+      "type": "zasob",
+      "subtype": "energia",
+      "name": "energia"
+    },
+    {
+      "id": "resource_water",
+      "type": "zasob",
+      "subtype": "woda",
+      "name": "woda"
+    },
+    {
+      "id": "resource_comms",
+      "type": "zasob",
+      "subtype": "laczność",
+      "name": "łączność"
+    },
+    {
+      "id": "event_blackout_sim",
+      "type": "zdarzenie",
+      "subtype": "blackout",
+      "name": "blackout - scenariusz symulowany"
+    },
+    {
+      "id": "hsw",
+      "type": "infrastruktura",
+      "subtype": "przemysl_obronny",
+      "name": "Huta Stalowa Wola",
+      "source": "OSM way/33016950",
+      "position": [50.541755, 22.0673501]
+    },
+    {
+      "id": "power_plant_sw",
+      "type": "infrastruktura",
+      "subtype": "energetyka",
+      "name": "Elektrownia Stalowa Wola",
+      "source": "OSM way/50778337",
+      "position": [50.557313, 22.0772891]
+    },
+    {
+      "id": "mzk_zwik",
+      "type": "infrastruktura",
+      "subtype": "wodociagi",
+      "name": "MZK / ZWiK Stalowa Wola",
+      "source": "OSM node/5265759529",
+      "position": [50.5690561, 22.0458172]
+    },
+    {
+      "id": "hospital_sw",
+      "type": "infrastruktura",
+      "subtype": "szpital",
+      "name": "Powiatowy Szpital Specjalistyczny w Stalowej Woli",
+      "source": "OSM way/187430937",
+      "position": [50.5637668, 22.0676254]
+    },
+    {
+      "id": "witu_obd",
+      "type": "infrastruktura",
+      "subtype": "badania_obronne",
+      "name": "Ośrodek Badań Dynamicznych WITU",
+      "source": "OSM way/583008416",
+      "position": [50.5688857, 22.0366569]
+    },
+    {
+      "id": "garrison_nisko",
+      "type": "infrastruktura",
+      "subtype": "wojsko",
+      "name": "Garnizon Nisko",
+      "source": "OSM way/102265934",
+      "position": [50.524194, 22.1263425]
+    },
+    {
+      "id": "europark",
+      "type": "infrastruktura",
+      "subtype": "strefa_przemyslowa",
+      "name": "Euro-Park Wisłosan",
+      "source": "OSM way/769044700",
+      "position": [50.5437307, 22.0640028]
+    },
+    {
+      "id": "hsw_rpz_0",
+      "type": "infrastruktura",
+      "subtype": "gpz",
+      "name": "RPZ-0 Huta Stalowa Wola 110kV",
+      "source": "OSM way/248088259",
+      "position": [50.5507265, 22.0542005]
+    },
+    {
+      "id": "hsw_rpz_1",
+      "type": "infrastruktura",
+      "subtype": "gpz",
+      "name": "RPZ-1 Huta Stalowa Wola 110kV",
+      "source": "OSM way/253822371",
+      "position": [50.5575062, 22.0570038]
+    },
+    {
+      "id": "hsw_rpz_2",
+      "type": "infrastruktura",
+      "subtype": "gpz",
+      "name": "RPZ-2 Huta Stalowa Wola 110kV",
+      "source": "OSM way/248088250",
+      "position": [50.547383, 22.0368653]
+    },
+    {
+      "id": "hsw_rpz_3",
+      "type": "infrastruktura",
+      "subtype": "gpz",
+      "name": "RPZ-3 Huta Stalowa Wola 110kV",
+      "source": "OSM way/253822367",
+      "position": [50.5438749, 22.0554819]
+    },
+    {
+      "id": "europark_roads",
+      "type": "infrastruktura",
+      "subtype": "transport",
+      "name": "Drogi strefowe Euro-Park Stalowa Wola",
+      "source": "OSM relation/20616661",
+      "position": [50.5314357, 22.0391296]
+    },
+    {
+      "id": "s19_connector_planned",
+      "type": "infrastruktura",
+      "subtype": "transport",
+      "name": "Planowany łącznik Euro-Park - S19",
+      "source": "OSM relation/20616553",
+      "position": [50.5193778, 22.0039235]
+    }
+  ],
+  "edges": [
+    {
+      "id": "energy_resource_from_plant",
+      "type": "obsługuje",
+      "source": "power_plant_sw",
+      "target": "resource_energy",
+      "confidence": "medium"
+    },
+    {
+      "id": "water_resource_from_mzk",
+      "type": "obsługuje",
+      "source": "mzk_zwik",
+      "target": "resource_water",
+      "confidence": "medium"
+    },
+    {
+      "id": "hsw_power_rpz0",
+      "type": "zasilany_przez",
+      "source": "hsw",
+      "target": "hsw_rpz_0",
+      "confidence": "low"
+    },
+    {
+      "id": "hsw_power_rpz1",
+      "type": "zasilany_przez",
+      "source": "hsw",
+      "target": "hsw_rpz_1",
+      "confidence": "low"
+    },
+    {
+      "id": "rpz0_rpz1_redundancy",
+      "type": "redundantny_z",
+      "source": "hsw_rpz_0",
+      "target": "hsw_rpz_1",
+      "confidence": "low"
+    },
+    {
+      "id": "rpz2_rpz3_redundancy",
+      "type": "redundantny_z",
+      "source": "hsw_rpz_2",
+      "target": "hsw_rpz_3",
+      "confidence": "low"
+    },
+    {
+      "id": "mzk_power_dependency",
+      "type": "zależny_od",
+      "source": "mzk_zwik",
+      "target": "resource_energy",
+      "confidence": "high"
+    },
+    {
+      "id": "hospital_power_dependency",
+      "type": "zależny_od",
+      "source": "hospital_sw",
+      "target": "resource_energy",
+      "confidence": "high"
+    },
+    {
+      "id": "hospital_backup_power",
+      "type": "backup",
+      "source": "hospital_sw",
+      "target": "resource_energy",
+      "confidence": "low"
+    },
+    {
+      "id": "hospital_water_dependency",
+      "type": "zależny_od",
+      "source": "hospital_sw",
+      "target": "resource_water",
+      "confidence": "high"
+    },
+    {
+      "id": "hsw_transport_europark",
+      "type": "połączony_z",
+      "source": "hsw",
+      "target": "europark_roads",
+      "confidence": "medium"
+    },
+    {
+      "id": "europark_transport_s19",
+      "type": "połączony_z",
+      "source": "europark_roads",
+      "target": "s19_connector_planned",
+      "confidence": "medium"
+    },
+    {
+      "id": "witu_transport_garrison",
+      "type": "połączony_z",
+      "source": "witu_obd",
+      "target": "garrison_nisko",
+      "confidence": "low"
+    },
+    {
+      "id": "hsw_depends_comms",
+      "type": "zależny_od",
+      "source": "hsw",
+      "target": "resource_comms",
+      "confidence": "medium"
+    },
+    {
+      "id": "mzk_depends_comms",
+      "type": "zależny_od",
+      "source": "mzk_zwik",
+      "target": "resource_comms",
+      "confidence": "medium"
+    },
+    {
+      "id": "blackout_impacts_energy",
+      "type": "zdarzenie_dotyczy",
+      "source": "event_blackout_sim",
+      "target": "resource_energy",
+      "confidence": "scenario"
+    }
+  ]
+}

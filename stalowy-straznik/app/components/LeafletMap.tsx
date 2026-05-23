@@ -23,13 +23,36 @@ type InfrastructureLayer =
   | "fuel"
   | "shelters"
   | "logistics"
-  | "strategic";
+  | "strategic"
+  | "dependencyGraph";
 
 type TileLayerConfig = {
   label: string;
   url: string;
   attribution: string;
   maxNativeZoom?: number;
+};
+
+type DependencyGraphNode = {
+  id: string;
+  type: string;
+  subtype: string;
+  name: string;
+  source?: string;
+  position?: [number, number];
+};
+
+type DependencyGraphEdge = {
+  id: string;
+  type: string;
+  source: string;
+  target: string;
+  confidence: string;
+};
+
+type DependencyGraph = {
+  nodes: DependencyGraphNode[];
+  edges: DependencyGraphEdge[];
 };
 
 const tileLayers: Record<MapView, TileLayerConfig> = {
@@ -69,13 +92,46 @@ const tileLayers: Record<MapView, TileLayerConfig> = {
 
 const center: LatLngExpression = [50.5826, 22.0536];
 const utilityWmsUrl = "https://stalowawola.geoportal2.pl/map/geoportal/wms.php?typ=g&";
+const graphEdgeStyles: Record<
+  string,
+  {
+    color: string;
+    dashArray?: string;
+  }
+> = {
+  zasilany_przez: {
+    color: "#facc15",
+  },
+  obsługuje: {
+    color: "#38bdf8",
+  },
+  zależny_od: {
+    color: "#ef4444",
+    dashArray: "7 5",
+  },
+  redundantny_z: {
+    color: "#22c55e",
+    dashArray: "2 7",
+  },
+  połączony_z: {
+    color: "#fb923c",
+  },
+  backup: {
+    color: "#14b8a6",
+    dashArray: "10 6",
+  },
+  zdarzenie_dotyczy: {
+    color: "#f43f5e",
+    dashArray: "4 8",
+  },
+};
 
 const infrastructureLayers: Record<
   InfrastructureLayer,
   {
     label: string;
     color: string;
-    source: "GESUT WMS" | "OpenStreetMap";
+    source: "GESUT WMS" | "OpenStreetMap" | "Model";
     wmsLayer?: string;
     geojsonLayer?: string;
   }
@@ -158,6 +214,11 @@ const infrastructureLayers: Record<
     source: "OpenStreetMap",
     geojsonLayer: "strategic",
   },
+  dependencyGraph: {
+    label: "graf zależności",
+    color: "#ffffff",
+    source: "Model",
+  },
 };
 
 const infrastructureLayerKeys = Object.keys(
@@ -178,6 +239,7 @@ const initialInfrastructureLayers: Record<InfrastructureLayer, boolean> = {
   shelters: true,
   logistics: true,
   strategic: true,
+  dependencyGraph: true,
 };
 
 const posts = [
@@ -197,6 +259,15 @@ const posts = [
     position: [50.6168, 22.0475] as LatLngExpression,
   },
 ];
+
+function escapeHtml(value: unknown) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 export default function LeafletMap() {
   const [mapView, setMapView] = useState<MapView>("standard");
@@ -337,7 +408,7 @@ export default function LeafletMap() {
             const properties = feature.properties ?? {};
             const name = properties.name ?? config.label;
             leafletLayer.bindPopup(
-              `<strong>${config.label}</strong><br />${name}<br /><small>${config.source}</small>`,
+              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>`,
             );
           },
         });
@@ -349,6 +420,74 @@ export default function LeafletMap() {
           geoJsonLayer.addTo(map);
         }
       });
+
+      const graphResponse = await fetch("/data/stalowa-wola-dependency-graph.json");
+
+      if (!graphResponse.ok || cancelled) {
+        return;
+      }
+
+      const graph = (await graphResponse.json()) as DependencyGraph;
+      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+      const relationLayer = L.layerGroup();
+
+      graph.edges.forEach((edge) => {
+        const sourceNode = nodeById.get(edge.source);
+        const targetNode = nodeById.get(edge.target);
+
+        if (!sourceNode?.position || !targetNode?.position) {
+          return;
+        }
+
+        const style = graphEdgeStyles[edge.type] ?? { color: "#ffffff" };
+
+        L.polyline([sourceNode.position, targetNode.position], {
+          color: style.color,
+          dashArray: style.dashArray,
+          opacity: 0.88,
+          weight: 3,
+        })
+          .bindPopup(
+            `<strong>${escapeHtml(edge.type)}</strong><br />${escapeHtml(sourceNode.name)} → ${escapeHtml(targetNode.name)}<br /><small>pewność: ${escapeHtml(edge.confidence)}</small>`,
+          )
+          .addTo(relationLayer);
+      });
+
+      graph.nodes
+        .filter((node) => node.position)
+        .forEach((node) => {
+          const outgoing = graph.edges.filter((edge) => edge.source === node.id);
+          const incoming = graph.edges.filter((edge) => edge.target === node.id);
+          const relations = [...outgoing, ...incoming]
+            .slice(0, 8)
+            .map((edge) => {
+              const oppositeId = edge.source === node.id ? edge.target : edge.source;
+              const oppositeNode = nodeById.get(oppositeId);
+              const direction = edge.source === node.id ? "→" : "←";
+
+              return `${escapeHtml(edge.type)} ${direction} ${escapeHtml(oppositeNode?.name ?? oppositeId)}`;
+            })
+            .join("<br />");
+
+          L.circleMarker(node.position as LatLngExpression, {
+            color: "#18181b",
+            fillColor: infrastructureLayers.dependencyGraph.color,
+            fillOpacity: 0.95,
+            radius: node.type === "zdarzenie" ? 9 : 7,
+            weight: 2,
+          })
+            .bindPopup(
+              `<strong>${escapeHtml(node.name)}</strong><br /><small>${escapeHtml(node.type)} / ${escapeHtml(node.subtype)}</small>${relations ? `<hr />${relations}` : ""}`,
+            )
+            .addTo(relationLayer);
+        });
+
+      infrastructureLayerInstances.current.dependencyGraph?.remove();
+      infrastructureLayerInstances.current.dependencyGraph = relationLayer;
+
+      if (activeInfrastructureLayersRef.current.dependencyGraph) {
+        relationLayer.addTo(map);
+      }
     }
 
     initializeMap();
@@ -462,7 +601,11 @@ export default function LeafletMap() {
                   {infrastructureLayers[layer].label}
                 </span>
                 <span className="text-[10px] uppercase tracking-wide text-zinc-400">
-                  {infrastructureLayers[layer].source === "GESUT WMS" ? "GESUT" : "OSM"}
+                  {infrastructureLayers[layer].source === "GESUT WMS"
+                    ? "GESUT"
+                    : infrastructureLayers[layer].source === "Model"
+                      ? "GRAF"
+                      : "OSM"}
                 </span>
               </label>
             ))}
