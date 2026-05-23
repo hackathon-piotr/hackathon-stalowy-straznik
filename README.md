@@ -1,4 +1,8 @@
-# Cele projektu
+# Stalowy Strażnik
+
+W jednym zdaniu do czego sluzy aplikacja.
+
+## Cele projektu
 
 1. Wizualizacja powiązań między poszczególnymi obiektami strategicznymi.
 2. Ocena ryzyka zagrożeń obiektów infrastruktury krytycznej w Stalowej Woli.
@@ -6,7 +10,7 @@
 4. Monitorowanie zagrożeń i ataków na infrastrukturę krytyczną w mieście.
 5. Analiza słabych punktów i potrzeb w zakresie obronności miasta.
 
-# Funkcjolności
+## Funkcjolności
 
 1. ...
 2. ...
@@ -14,21 +18,21 @@
 4. ...
 5. ...
 
-# Żródła danych
+## Żródła danych
 
 Tutaj skąd pobralismy dane i z jakich sytstemow aplikacja monitoruje zagrozenia.
 
-# Implementacja
+## Implementacja
 
-## Mapa infrastruktury krytycznej
+### Mapa infrastruktury krytycznej
 
 Wykorzystanie biblioteki Leaflet w celu wizualizacji danych na mapie.
 
-## Powiązania między obiektami
+### Powiązania między obiektami
 
 Wykorzystanie grafowej bazy danych Neo4j w celu przechowania relacji między obiektami:
 
-### Węzły (Nodes)
+#### Węzły (Nodes)
 
 * obiekty infrastruktury:
     * energetyka (GPZ, stacje transformatorowe)
@@ -41,7 +45,7 @@ Wykorzystanie grafowej bazy danych Neo4j w celu przechowania relacji między obi
 * zdarzenia:
     * awarie, blackouty (historyczne / symulowane)
 
-### Relacje (Edges)
+#### Relacje (Edges)
 
 * „zasilany_przez”
 * „obsługuje”
@@ -50,22 +54,22 @@ Wykorzystanie grafowej bazy danych Neo4j w celu przechowania relacji między obi
 * „połączony_z”
 * „backup”
 
-## Interfejs użytkownika
+### Interfejs użytkownika
 
-### Warstwa 1: fizyczna infrastruktura
+#### Warstwa 1: fizyczna infrastruktura
 
 * punkty obiektów
 * linie (kable, rurociągi, sieci)
 * strefy (np. zasięg sieci wodnej)
 
-### Warstwa 2: zależności (graf)
+#### Warstwa 2: zależności (graf)
 
 * kliknięcie obiektu → pokazuje:
 
     * od czego zależy
     * co przestanie działać, jeśli padnie
 
-### Warstwa 3: krytyczność (heatmap)
+#### Warstwa 3: krytyczność (heatmap)
 
 * kolor:
 
@@ -73,39 +77,39 @@ Wykorzystanie grafowej bazy danych Neo4j w celu przechowania relacji między obi
     * żółty → średnia
     * czerwony → wysoka
 
-### Warstwa 4: redundancja
+#### Warstwa 4: redundancja
 
 * czy obiekt ma backup
 * czy jest single point of failure
 
-### Warstwa 5: scenariusze awaryjne (symulacje)
+#### Warstwa 5: scenariusze awaryjne (symulacje)
 
 * „utrata zasilania”
 * „utrata łączności”
 * „awaria wodociągu”
 
-## Ocena ryzyka
+### Ocena ryzyka
 
 Dla każdego obiektu:
 
-### 1. Krytyczność (C)
+#### 1. Krytyczność (C)
 
 * jak ważny jest obiekt dla miasta
 * np. szpital > szkoła > biuro
 
-### 2. Zależność (D)
+#### 2. Zależność (D)
 
 * ile innych obiektów od niego zależy
 
-### 3. Redundancja (R)
+#### 3. Redundancja (R)
 
 * czy istnieje backup (im mniej, tym większe ryzyko)
 
-### 4. Ekspozycja (E)
+#### 4. Ekspozycja (E)
 
 * czy jest narażony (np. na zakłócenia infrastrukturalne / awarie środowiskowe / przeciążenia systemowe — ogólnie, bez wchodzenia w szczegóły zagrożeń)
 
-### Przykładowy wzór:
+#### Przykładowy wzór:
 
 [
 RISK = (C \cdot 0.4) + (D \cdot 0.3) + (E \cdot 0.2) + ((1 - R) \cdot 0.1)
@@ -117,8 +121,12 @@ W grafie:
 * liczba zależnych węzłów
 * długość ścieżek obejścia (redundancy depth)
 
-### Propagacja oceny ryzyka podczas zdarzenia
+#### Propagacja oceny ryzyka podczas zdarzenia
 
 * symulujesz awarię w jednym węźle
 * ile węzłów traci funkcję
 * jak szybko rozprzestrzenia się efekt
+
+## Dalsze możliwości rozwoju
+
+Kilka zdań lub punktów, jak dalej rozwijać aplikację i co można dodać.
