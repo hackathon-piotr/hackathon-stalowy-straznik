@@ -532,6 +532,14 @@ function getRiskPopupHtml(risk: RiskScore) {
   return `<div class="risk-score"><div><strong>Risk score: ${risk.value}/100</strong> (${escapeHtml(risk.level)})</div><div class="risk-bar"><span style="width:${risk.value}%"></span></div><ul>${reasonList}</ul><small>Wskaźnik odporności: zależności, redundancja, backup, skupienie obiektów. Bez oceny podatności na środki rażenia.</small></div>`;
 }
 
+function getRiskBadgeClass(risk: RiskScore) {
+  return `risk-badge risk-badge-${risk.level.replace("ś", "s")}`;
+}
+
+function getRiskBadgeHtml(risk: RiskScore) {
+  return `<span class="${getRiskBadgeClass(risk)}">${risk.value}</span>`;
+}
+
 export default function LeafletMap() {
   const [mapView, setMapView] = useState<MapView>("standard");
   const [activeInfrastructureLayers, setActiveInfrastructureLayers] = useState(
@@ -696,11 +704,46 @@ export default function LeafletMap() {
           },
         });
 
+        const riskBadgeLayer = L.layerGroup();
+
+        geojson.features
+          .filter((feature) => feature.properties?.layer === config.geojsonLayer)
+          .forEach((feature) => {
+            const position = getFeaturePosition(feature);
+            const showRiskScore = [
+              "strategic",
+              "hospitals",
+              "power",
+              "bts",
+              "bridges",
+              "rail",
+            ].includes(String(feature.properties?.layer));
+
+            if (!position || !showRiskScore) {
+              return;
+            }
+
+            const risk = calculateFeatureRisk(feature, geojson.features, graph);
+
+            L.marker(position, {
+              icon: L.divIcon({
+                className: "risk-badge-icon",
+                html: getRiskBadgeHtml(risk),
+                iconSize: [34, 22],
+                iconAnchor: [17, 11],
+              }),
+              interactive: false,
+              keyboard: false,
+            }).addTo(riskBadgeLayer);
+          });
+
+        const combinedLayer = L.layerGroup([geoJsonLayer, riskBadgeLayer]);
+
         infrastructureLayerInstances.current[layer]?.remove();
-        infrastructureLayerInstances.current[layer] = geoJsonLayer;
+        infrastructureLayerInstances.current[layer] = combinedLayer;
 
         if (activeInfrastructureLayersRef.current[layer]) {
-          geoJsonLayer.addTo(map);
+          combinedLayer.addTo(map);
         }
       });
 
@@ -761,6 +804,17 @@ export default function LeafletMap() {
               `<strong>${escapeHtml(node.name)}</strong><br /><small>${escapeHtml(node.type)} / ${escapeHtml(node.subtype)}</small>${getRiskPopupHtml(risk)}${relations ? `<hr />${relations}` : ""}`,
             )
             .addTo(relationLayer);
+
+          L.marker(node.position as LatLngExpression, {
+            icon: L.divIcon({
+              className: "risk-badge-icon",
+              html: getRiskBadgeHtml(risk),
+              iconSize: [34, 22],
+              iconAnchor: [17, -4],
+            }),
+            interactive: false,
+            keyboard: false,
+          }).addTo(relationLayer);
         });
 
       infrastructureLayerInstances.current.dependencyGraph?.remove();
