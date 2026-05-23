@@ -571,6 +571,7 @@ export default function LeafletMap() {
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [selectedAttackType, setSelectedAttackType] = useState<string>("power");
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
+  const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
 
   useEffect(() => {
     mapViewRef.current = mapView;
@@ -1166,15 +1167,42 @@ export default function LeafletMap() {
           <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
 
           <div className="absolute left-6 top-6 z-50 pointer-events-auto">
-            <div className="bg-white/5 p-3 rounded text-sm">
-              <div className="font-semibold mb-2">Warstwy</div>
-              <div className="flex flex-col gap-2 text-zinc-100">
-                <div className="flex items-center gap-2"><span>⚡</span> energia</div>
-                <div className="flex items-center gap-2"><span>💧</span> woda</div>
-                <div className="flex items-center gap-2"><span>🏥</span> szpital</div>
-                <div className="flex items-center gap-2"><span>📡</span> telekom</div>
-                <div className="flex items-center gap-2"><span>🚆</span> transport</div>
-              </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setShowLayersPanel((s) => !s)}
+                className="bg-white/5 p-2 rounded text-sm"
+              >
+                Warstwy
+              </button>
+
+              {showLayersPanel && (
+                <div className="bg-white/5 p-3 rounded mt-2 text-sm shadow-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-semibold">Warstwy</div>
+                    <button type="button" onClick={() => setShowLayersPanel(false)} className="text-xs">Zamknij</button>
+                  </div>
+                  <div className="flex flex-col gap-2 text-zinc-100">
+                    {infrastructureLayerKeys.map((layer) => (
+                      <label key={layer} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={activeInfrastructureLayers[layer]}
+                          onChange={() =>
+                            setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
+                          }
+                          className="h-4 w-4"
+                        />
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: infrastructureLayers[layer].color }}
+                        />
+                        <span className="truncate">{infrastructureLayers[layer].label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
