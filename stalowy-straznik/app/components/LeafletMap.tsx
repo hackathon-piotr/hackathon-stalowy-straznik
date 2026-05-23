@@ -7,7 +7,13 @@ import type {
   Map as LeafletMapInstance,
   TileLayer as LeafletTileLayer,
 } from "leaflet";
-import type { Feature, GeoJsonObject, GeoJsonProperties, Geometry } from "geojson";
+import type {
+  Feature,
+  FeatureCollection,
+  GeoJsonProperties,
+  Geometry,
+  Position,
+} from "geojson";
 
 type MapView = "standard" | "satellite" | "geoportal" | "nasa" | "sentinel";
 type InfrastructureLayer =
@@ -53,6 +59,12 @@ type DependencyGraphEdge = {
 type DependencyGraph = {
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];
+};
+
+type RiskScore = {
+  value: number;
+  level: "niski" | "średni" | "wysoki" | "krytyczny";
+  reasons: string[];
 };
 
 const tileLayers: Record<MapView, TileLayerConfig> = {
@@ -269,6 +281,257 @@ function escapeHtml(value: unknown) {
     .replaceAll("'", "&#039;");
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getRiskLevel(score: number): RiskScore["level"] {
+  if (score >= 80) return "krytyczny";
+  if (score >= 60) return "wysoki";
+  if (score >= 35) return "średni";
+
+  return "niski";
+}
+
+function getFeaturePosition(feature: Feature<Geometry, GeoJsonProperties>) {
+  const geometry = feature.geometry;
+
+  if (!geometry) {
+    return null;
+  }
+
+  if (geometry.type === "Point") {
+    return [geometry.coordinates[1], geometry.coordinates[0]] as [number, number];
+  }
+
+  let coordinates: Position[] = [];
+
+  if (geometry.type === "LineString") {
+    coordinates = geometry.coordinates;
+  }
+
+  if (geometry.type === "Polygon") {
+    coordinates = geometry.coordinates[0] ?? [];
+  }
+
+  if (geometry.type === "MultiLineString") {
+    coordinates = geometry.coordinates.flat();
+  }
+
+  if (!coordinates.length) {
+    return null;
+  }
+
+  const midpoint = coordinates[Math.floor(coordinates.length / 2)];
+
+  return [midpoint[1], midpoint[0]] as [number, number];
+}
+
+function getDistanceKm(first: [number, number], second: [number, number]) {
+  const earthRadiusKm = 6371;
+  const degreesToRadians = Math.PI / 180;
+  const deltaLat = (second[0] - first[0]) * degreesToRadians;
+  const deltaLng = (second[1] - first[1]) * degreesToRadians;
+  const lat1 = first[0] * degreesToRadians;
+  const lat2 = second[0] * degreesToRadians;
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function getCriticalClusterCount(
+  position: [number, number] | null,
+  features: Feature<Geometry, GeoJsonProperties>[],
+) {
+  if (!position) {
+    return 0;
+  }
+
+  return features.filter((feature) => {
+    const layer = feature.properties?.layer;
+
+    if (
+      ![
+        "strategic",
+        "hospitals",
+        "power",
+        "bts",
+        "bridges",
+        "rail",
+        "fuel",
+        "warehouses",
+      ].includes(String(layer))
+    ) {
+      return false;
+    }
+
+    const featurePosition = getFeaturePosition(feature);
+
+    return featurePosition ? getDistanceKm(position, featurePosition) <= 1.2 : false;
+  }).length;
+}
+
+function findGraphNodeForFeature(
+  feature: Feature<Geometry, GeoJsonProperties>,
+  graph: DependencyGraph | null,
+) {
+  if (!graph) {
+    return undefined;
+  }
+
+  const featureId = String(feature.id ?? feature.properties?.id ?? "");
+  const featureName = String(feature.properties?.name ?? "").toLowerCase();
+
+  return graph.nodes.find((node) => {
+    const source = node.source?.toLowerCase() ?? "";
+    const nodeName = node.name.toLowerCase();
+
+    return source.includes(featureId.toLowerCase()) || nodeName === featureName;
+  });
+}
+
+function calculateNodeRisk(
+  node: DependencyGraphNode,
+  graph: DependencyGraph,
+  features: Feature<Geometry, GeoJsonProperties>[],
+): RiskScore {
+  const edges = graph.edges.filter(
+    (edge) => edge.source === node.id || edge.target === node.id,
+  );
+  const dependencyCount = edges.filter((edge) =>
+    ["zależny_od", "zasilany_przez"].includes(edge.type),
+  ).length;
+  const servesCount = edges.filter((edge) => edge.type === "obsługuje").length;
+  const hasRedundancy = edges.some((edge) => edge.type === "redundantny_z");
+  const hasBackup = edges.some((edge) => edge.type === "backup");
+  const clusterCount = getCriticalClusterCount(node.position ?? null, features);
+  const reasons: string[] = [];
+  let score = 20;
+
+  if (["gpz", "energetyka", "wodociagi", "szpital", "przemysl_obronny"].includes(node.subtype)) {
+    score += 18;
+    reasons.push("funkcja krytyczna");
+  }
+
+  if (dependencyCount > 0) {
+    score += dependencyCount * 10;
+    reasons.push(`${dependencyCount} zależności z grafu`);
+  }
+
+  if (servesCount > 0) {
+    score += servesCount * 8;
+    reasons.push("obsługuje zasób lub usługę");
+  }
+
+  if (!hasRedundancy && node.type === "infrastruktura") {
+    score += 12;
+    reasons.push("brak relacji redundancji w modelu");
+  }
+
+  if (!hasBackup && ["szpital", "wodociagi", "energetyka"].includes(node.subtype)) {
+    score += 10;
+    reasons.push("brak jawnego backupu w modelu");
+  }
+
+  if (clusterCount >= 5) {
+    score += 14;
+    reasons.push("duże skupisko ważnych obiektów w promieniu 1.2 km");
+  } else if (clusterCount >= 3) {
+    score += 8;
+    reasons.push("skupisko ważnych obiektów w promieniu 1.2 km");
+  }
+
+  const value = clamp(Math.round(score), 0, 100);
+
+  return {
+    value,
+    level: getRiskLevel(value),
+    reasons,
+  };
+}
+
+function calculateFeatureRisk(
+  feature: Feature<Geometry, GeoJsonProperties>,
+  features: Feature<Geometry, GeoJsonProperties>[],
+  graph: DependencyGraph | null,
+): RiskScore {
+  const layer = String(feature.properties?.layer ?? "");
+  const tags = (feature.properties?.tags ?? {}) as Record<string, string>;
+  const graphNode = findGraphNodeForFeature(feature, graph);
+
+  if (graphNode && graph) {
+    return calculateNodeRisk(graphNode, graph, features);
+  }
+
+  const position = getFeaturePosition(feature);
+  const clusterCount = getCriticalClusterCount(position, features);
+  const reasons: string[] = [];
+  let score = 20;
+
+  const layerWeights: Record<string, number> = {
+    strategic: 22,
+    hospitals: 20,
+    power: 18,
+    bridges: 14,
+    rail: 12,
+    bts: 12,
+    fuel: 10,
+    warehouses: 8,
+    shelters: 6,
+  };
+
+  if (layerWeights[layer]) {
+    score += layerWeights[layer];
+    reasons.push(`warstwa: ${layer}`);
+  }
+
+  if (tags.power === "plant" || tags.power === "substation") {
+    score += 14;
+    reasons.push("obiekt energetyczny");
+  }
+
+  if (tags.amenity === "hospital" || tags.healthcare === "hospital") {
+    score += 14;
+    reasons.push("ciągłość działania usług medycznych");
+  }
+
+  if (tags.military || tags.landuse === "military") {
+    score += 10;
+    reasons.push("jawnie oznaczona funkcja obronna");
+  }
+
+  if (clusterCount >= 5) {
+    score += 14;
+    reasons.push("duże skupisko ważnych obiektów w promieniu 1.2 km");
+  } else if (clusterCount >= 3) {
+    score += 8;
+    reasons.push("skupisko ważnych obiektów w promieniu 1.2 km");
+  }
+
+  if (["strategic", "hospitals", "power"].includes(layer)) {
+    score += 10;
+    reasons.push("brak potwierdzonej redundancji w danych publicznych");
+  }
+
+  const value = clamp(Math.round(score), 0, 100);
+
+  return {
+    value,
+    level: getRiskLevel(value),
+    reasons,
+  };
+}
+
+function getRiskPopupHtml(risk: RiskScore) {
+  const reasonList = risk.reasons.length
+    ? risk.reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")
+    : "<li>brak dodatkowych czynników w modelu</li>";
+
+  return `<div class="risk-score"><div><strong>Risk score: ${risk.value}/100</strong> (${escapeHtml(risk.level)})</div><div class="risk-bar"><span style="width:${risk.value}%"></span></div><ul>${reasonList}</ul><small>Wskaźnik odporności: zależności, redundancja, backup, skupienie obiektów. Bez oceny podatności na środki rażenia.</small></div>`;
+}
+
 export default function LeafletMap() {
   const [mapView, setMapView] = useState<MapView>("standard");
   const [activeInfrastructureLayers, setActiveInfrastructureLayers] = useState(
@@ -373,7 +636,15 @@ export default function LeafletMap() {
         return;
       }
 
-      const geojson = (await response.json()) as GeoJsonObject;
+      const geojson = (await response.json()) as FeatureCollection<
+        Geometry,
+        GeoJsonProperties
+      >;
+      const graphResponse = await fetch("/data/stalowa-wola-dependency-graph.json");
+      const graph =
+        graphResponse.ok && !cancelled
+          ? ((await graphResponse.json()) as DependencyGraph)
+          : null;
 
       infrastructureLayerKeys.forEach((layer) => {
         const config = infrastructureLayers[layer];
@@ -407,8 +678,20 @@ export default function LeafletMap() {
           onEachFeature: (feature, leafletLayer) => {
             const properties = feature.properties ?? {};
             const name = properties.name ?? config.label;
+            const showRiskScore = [
+              "strategic",
+              "hospitals",
+              "power",
+              "bts",
+              "bridges",
+              "rail",
+            ].includes(String(properties.layer));
+            const riskHtml = showRiskScore
+              ? getRiskPopupHtml(calculateFeatureRisk(feature, geojson.features, graph))
+              : "";
+
             leafletLayer.bindPopup(
-              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>`,
+              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>${riskHtml}`,
             );
           },
         });
@@ -421,13 +704,10 @@ export default function LeafletMap() {
         }
       });
 
-      const graphResponse = await fetch("/data/stalowa-wola-dependency-graph.json");
-
-      if (!graphResponse.ok || cancelled) {
+      if (!graph || cancelled) {
         return;
       }
 
-      const graph = (await graphResponse.json()) as DependencyGraph;
       const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
       const relationLayer = L.layerGroup();
 
@@ -456,6 +736,7 @@ export default function LeafletMap() {
       graph.nodes
         .filter((node) => node.position)
         .forEach((node) => {
+          const risk = calculateNodeRisk(node, graph, geojson.features);
           const outgoing = graph.edges.filter((edge) => edge.source === node.id);
           const incoming = graph.edges.filter((edge) => edge.target === node.id);
           const relations = [...outgoing, ...incoming]
@@ -477,7 +758,7 @@ export default function LeafletMap() {
             weight: 2,
           })
             .bindPopup(
-              `<strong>${escapeHtml(node.name)}</strong><br /><small>${escapeHtml(node.type)} / ${escapeHtml(node.subtype)}</small>${relations ? `<hr />${relations}` : ""}`,
+              `<strong>${escapeHtml(node.name)}</strong><br /><small>${escapeHtml(node.type)} / ${escapeHtml(node.subtype)}</small>${getRiskPopupHtml(risk)}${relations ? `<hr />${relations}` : ""}`,
             )
             .addTo(relationLayer);
         });
