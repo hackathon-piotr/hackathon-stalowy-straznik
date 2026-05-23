@@ -6,6 +6,18 @@
 4. Monitorowanie zagrożeń i ataków na infrastrukturę krytyczną w mieście.
 5. Analiza słabych punktów i potrzeb w zakresie obronności miasta.
 
+# Funkcjolności
+
+1. ...
+2. ...
+3. ...
+4. ...
+5. ...
+
+# Żródła danych
+
+Tutaj skąd pobralismy dane i z jakich sytstemow aplikacja monitoruje zagrozenia.
+
 # Implementacja
 
 ## Mapa infrastruktury krytycznej
