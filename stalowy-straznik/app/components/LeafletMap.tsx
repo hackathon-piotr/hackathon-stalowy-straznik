@@ -65,6 +65,7 @@ type RiskScore = {
   value: number;
   level: "niski" | "średni" | "wysoki" | "krytyczny";
   reasons: string[];
+  vulnerabilities?: Record<string, number>; // oceny podatności na środki rażenia
 };
 
 const tileLayers: Record<MapView, TileLayerConfig> = {
@@ -529,7 +530,13 @@ function getRiskPopupHtml(risk: RiskScore) {
     ? risk.reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")
     : "<li>brak dodatkowych czynników w modelu</li>";
 
-  return `<div class="risk-score"><div><strong>Risk score: ${risk.value}/100</strong> (${escapeHtml(risk.level)})</div><div class="risk-bar"><span style="width:${risk.value}%"></span></div><ul>${reasonList}</ul><small>Wskaźnik odporności: zależności, redundancja, backup, skupienie obiektów. Bez oceny podatności na środki rażenia.</small></div>`;
+  const vulnList = risk.vulnerabilities
+    ? Object.entries(risk.vulnerabilities)
+        .map(([k, v]) => `<li>${escapeHtml(k)}: ${v}%</li>`)
+        .join("")
+    : "<li>brak oceny podatności</li>";
+
+  return `<div class="risk-score"><div><strong>Risk score: ${risk.value}/100</strong> (${escapeHtml(risk.level)})</div><div class="risk-bar"><span style="width:${risk.value}%"></span></div><ul>${reasonList}</ul><div class="vulnerabilities"><strong>Ocena podatności:</strong><ul>${vulnList}</ul></div><small>Wskaźnik odporności: zależności, redundancja, backup, skupienie obiektów.</small></div>`;
 }
 
 function getRiskBadgeClass(risk: RiskScore) {
