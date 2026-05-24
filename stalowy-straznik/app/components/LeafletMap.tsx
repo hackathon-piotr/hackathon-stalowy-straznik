@@ -1166,21 +1166,21 @@ export default function LeafletMap() {
         <div className="w-2/3 border-r border-white/10 relative">
           <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
 
-          <div className="absolute left-6 top-6 z-50 pointer-events-auto">
+          <div className="absolute left-6 top-6 z-[1000] pointer-events-auto">
             <div className="flex flex-col gap-2">
               <button
                 type="button"
                 onClick={() => setShowLayersPanel((s) => !s)}
-                className="bg-white/5 p-2 rounded text-sm"
+                className="bg-white/10 text-white px-3 py-2 rounded shadow"
               >
                 Warstwy
               </button>
 
               {showLayersPanel && (
-                <div className="bg-white/5 p-3 rounded mt-2 text-sm shadow-lg">
+                <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10">
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-semibold">Warstwy</div>
-                    <button type="button" onClick={() => setShowLayersPanel(false)} className="text-xs">Zamknij</button>
+                    <button type="button" onClick={() => setShowLayersPanel(false)} className="text-xs text-zinc-300">Zamknij</button>
                   </div>
                   <div className="flex flex-col gap-2 text-zinc-100">
                     {infrastructureLayerKeys.map((layer) => (
@@ -1191,10 +1191,10 @@ export default function LeafletMap() {
                           onChange={() =>
                             setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
                           }
-                          className="h-4 w-4"
+                          className="h-4 w-4 accent-red-500"
                         />
                         <span
-                          className="h-2.5 w-2.5 rounded-full"
+                          className="h-3 w-3 rounded-full"
                           style={{ backgroundColor: infrastructureLayers[layer].color }}
                         />
                         <span className="truncate">{infrastructureLayers[layer].label}</span>
