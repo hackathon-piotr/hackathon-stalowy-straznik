@@ -547,14 +547,6 @@ function getRiskBadgeHtml(risk: RiskScore) {
   return `<span class="${getRiskBadgeClass(risk)}">${risk.value}</span>`;
 }
 
-function getFeatureStatusHtml(feature: Feature<Geometry, GeoJsonProperties>) {
-  const fid = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? '');
-  const st = featureStatesRef.current[fid];
-  if (!st) return '';
-  const issuesHtml = st.issues && st.issues.length ? st.issues.map((i) => `<li>${escapeHtml(i)}</li>`).join('') : '<li>brak</li>';
-  return `<div class="feature-status"><strong>Stan: ${escapeHtml(st.status)} (${st.health}%)</strong><ul>${issuesHtml}</ul></div>`;
-}
-
 export default function LeafletMap() {
 
   const [mapView, setMapView] = useState<MapView>("standard");
@@ -763,11 +755,65 @@ export default function LeafletMap() {
     const mapping: Record<string, string> = {
       fire: 'Straż pożarna: zaangażowano zasoby',
       military: 'Mobilizacja wojskowa: ogłoszona',
-      evac: 'Ewakuacja cywili: rozpoczęta',
+      evac: 'Ewakuacja cywilów: rozpoczęta',
     };
     const msg = mapping[key] ?? key;
     setWarActionsTaken((prev) => (prev.includes(msg) ? prev : [...prev, msg]));
   }
+
+  // provide a runtime popup status generator that reads featureStatesRef
+  function getFeatureStatusHtmlLocal(feature: Feature<Geometry, GeoJsonProperties>) {
+    const fid = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? '');
+    const st = featureStatesRef.current[fid];
+    if (!st) return '';
+    const issuesHtml = st.issues && st.issues.length ? st.issues.map((i) => `<li>${escapeHtml(i)}</li>`).join('') : '<li>brak</li>';
+    return `<div class="feature-status"><strong>Stan: ${escapeHtml(st.status)} (${st.health}%)</strong><ul>${issuesHtml}</ul></div>`;
+  }
+
+  // allow popup buttons to assign immediate actions to a specific feature
+  function assignActionToFeature(fid: string, action: string) {
+    if (!fid) return;
+    const mapping: Record<string,string> = { fire: 'Straż pożarna: wysłano do obiektu', military: 'Wojsko: wsparcie', evac: 'Ewakuacja: rozpoczęta' };
+    const msg = mapping[action] ?? action;
+    setWarActionsTaken((prev) => (prev.includes(msg) ? prev : [...prev, msg]));
+
+    if (!featureStatesRef.current[fid]) featureStatesRef.current[fid] = { health: 100, status: 'ok', issues: [] };
+    const st = featureStatesRef.current[fid];
+
+    if (action === 'fire') {
+      st.health = Math.min(100, st.health + 20);
+      st.issues = st.issues.filter((i) => i !== 'structural');
+      if (st.health > 50 && st.issues.length === 0) st.status = 'ok';
+    } else if (action === 'military') {
+      st.health = Math.min(100, st.health + 10);
+      st.issues = st.issues.filter((i) => i !== 'structural');
+    } else if (action === 'evac') {
+      if (!st.issues.includes('evacuated')) st.issues.push('evacuated');
+    }
+
+    // refresh visuals
+    refreshIssuesLayer(mapInstance.current || undefined);
+  }
+
+  // expose to popup onclick handlers
+  (window as any).assignActionToFeature = assignActionToFeature;
+
+  // inject minimal CSS for issue icons and popups
+  useEffect(() => {
+    if (document.getElementById('leaflet-issues-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'leaflet-issues-styles';
+    style.innerHTML = `
+.issue-icon { font-size:20px; text-shadow: 0 1px 0 #000; }
+.feature-status { margin-top:6px; font-size:12px; color:#ffd; }
+.feature-status ul { margin:4px 0 0 16px; padding:0; }
+.popup-actions { margin-top:6px; display:flex; gap:6px; }
+.popup-actions button { background:#222; color:#fff; border-radius:6px; padding:6px 8px; border:1px solid #444; cursor:pointer; }
+.popup-actions button:hover { opacity:0.9; transform:translateY(-1px); }
+.city-outage-banner { position:absolute; left:50%; transform:translateX(-50%); top:64px; z-index:1500; background:#b91c1c; color:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5);} 
+`;
+    document.head.appendChild(style);
+  }, []);
 
   useEffect(() => {
     mapViewRef.current = mapView;
@@ -916,10 +962,12 @@ export default function LeafletMap() {
             const riskHtml = showRiskScore
               ? getRiskPopupHtml(calculateFeatureRisk(feature, geojson.features, graph))
               : "";
-            const statusHtml = getFeatureStatusHtml(feature);
+            const statusHtml = getFeatureStatusHtmlLocal(feature);
+            const fidEsc = escapeHtml(String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? ''));
+            const actionsHtml = `<div class="popup-actions"><button onclick="window.assignActionToFeature('${fidEsc}','fire')">🚒 Zaangażuj straż</button><button onclick="window.assignActionToFeature('${fidEsc}','military')">🪖 Mobilizuj</button><button onclick="window.assignActionToFeature('${fidEsc}','evac')">🏃‍♀️ Ewakuuj</button></div>`;
 
             leafletLayer.bindPopup(
-              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>${riskHtml}${statusHtml}`,
+              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>${riskHtml}${statusHtml}${actionsHtml}`,
             );
           },
         });
