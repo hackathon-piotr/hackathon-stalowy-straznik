@@ -1308,6 +1308,7 @@ export default function LeafletMap() {
     // stop alarm if running
     stopAlarm();
     setWarAlert(null);
+    setWarActionsTaken([]);
   }
 
   return (
@@ -1335,6 +1336,33 @@ export default function LeafletMap() {
               <ul className="list-disc list-inside mt-2">
                 {warAlert.actions.map((a,i)=>(<li key={i}>{a}</li>))}
               </ul>
+
+              <div className="mt-3">
+                <div className="font-semibold">Podejmij działania</div>
+                <div className="mt-2 flex gap-2">
+                  <button onClick={() => takeWarAction('fire')}
+                    className="bg-red-600 px-3 py-2 rounded text-sm flex items-center gap-2">
+                    <span>🚒</span> <span>Zaangażuj straż pożarną</span>
+                  </button>
+                  <button onClick={() => takeWarAction('military')}
+                    className="bg-zinc-700 px-3 py-2 rounded text-sm flex items-center gap-2">
+                    <span>🪖</span> <span>Mobilizacja wojskowa</span>
+                  </button>
+                  <button onClick={() => takeWarAction('evac')}
+                    className="bg-yellow-600 px-3 py-2 rounded text-sm flex items-center gap-2">
+                    <span>🏃‍♀️</span> <span>Ewakuacja cywili</span>
+                  </button>
+                </div>
+
+                {warActionsTaken.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-sm font-semibold">Wykonane działania</div>
+                    <ul className="list-disc list-inside mt-2">
+                      {warActionsTaken.map((a,i)=>(<li key={i}>{a}</li>))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="mt-4">
               <div className="font-semibold">Potencjalne cele</div>
