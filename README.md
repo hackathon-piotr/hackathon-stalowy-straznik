@@ -1,6 +1,6 @@
 # Stalowy Strażnik
 
-W jednym zdaniu do czego sluzy aplikacja.
+City Resilience & Infrastructure Awareness Platform
 
 ## Cele projektu
 
