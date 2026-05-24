@@ -621,6 +621,20 @@ export default function LeafletMap() {
     } catch (e) {}
   }
 
+  // war action tracking
+  const [warActionsTaken, setWarActionsTaken] = useState<string[]>([]);
+
+  function takeWarAction(key: string) {
+    if (!warAlert) return;
+    const mapping: Record<string, string> = {
+      fire: 'Straż pożarna: zaangażowano zasoby',
+      military: 'Mobilizacja wojskowa: ogłoszona',
+      evac: 'Ewakuacja cywili: rozpoczęta',
+    };
+    const msg = mapping[key] ?? key;
+    setWarActionsTaken((prev) => (prev.includes(msg) ? prev : [...prev, msg]));
+  }
+
   useEffect(() => {
     mapViewRef.current = mapView;
   }, [mapView]);
