@@ -1167,6 +1167,21 @@ export default function LeafletMap() {
         <div className="w-2/3 border-r border-white/10 relative">
           <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
 
+          <div className="absolute right-6 top-6 z-[1000] pointer-events-auto">
+            <div className="bg-zinc-900/95 text-white p-2 rounded shadow-md flex space-x-1">
+              {(Object.keys(tileLayers) as MapView[]).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => setMapView(view)}
+                  className={`px-2 py-1 rounded text-sm transition ${mapView === view ? "bg-white text-zinc-900" : "bg-white/10 text-white hover:bg-white/20"}`}
+                >
+                  {tileLayers[view].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="absolute left-6 top-6 z-[1000] pointer-events-auto">
             <div className="flex flex-col gap-2">
               <div>
