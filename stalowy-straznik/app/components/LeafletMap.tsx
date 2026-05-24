@@ -575,6 +575,52 @@ export default function LeafletMap() {
   const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
   const [warAlert, setWarAlert] = useState<{title:string; actions:string[]; targets:{name:string;prob:number;effect:string}[]} | null>(null);
 
+  // Alarm audio refs
+  const alarmCtxRef = useRef<AudioContext | null>(null);
+  const alarmOscRef = useRef<OscillatorNode | null>(null);
+  const alarmGainRef = useRef<GainNode | null>(null);
+
+  function startAlarm() {
+    try {
+      if (!('AudioContext' in window) && !('webkitAudioContext' in window)) return;
+      const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!alarmCtxRef.current) alarmCtxRef.current = new AudioCtx();
+      const ctx = alarmCtxRef.current;
+      stopAlarm();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 420;
+      gain.gain.value = 0.0001;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      // ramp gain to audible
+      gain.gain.linearRampToValueAtTime(0.6, ctx.currentTime + 0.05);
+      alarmOscRef.current = osc;
+      alarmGainRef.current = gain;
+    } catch (e) {
+      // ignore if audio not available
+    }
+  }
+
+  function stopAlarm() {
+    try {
+      if (alarmGainRef.current) {
+        const g = alarmGainRef.current;
+        const ctx = alarmCtxRef.current!;
+        g.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.05);
+      }
+      if (alarmOscRef.current) {
+        try { alarmOscRef.current.stop(); } catch (e) {}
+        alarmOscRef.current.disconnect?.();
+        alarmOscRef.current = null;
+      }
+      if (alarmGainRef.current) { alarmGainRef.current.disconnect?.(); alarmGainRef.current = null; }
+      // keep context for reuse
+    } catch (e) {}
+  }
+
   useEffect(() => {
     mapViewRef.current = mapView;
   }, [mapView]);
@@ -1190,7 +1236,7 @@ export default function LeafletMap() {
     });
 
     // prepare war alert popup content
-    const targetsInfo = affected.slice(0,5).map((f) => {
+    let targetsInfo = affected.slice(0,5).map((f) => {
       const risk = calculateFeatureRisk(f, features, graph);
       const name = String(f.properties?.name ?? f.properties?.label ?? 'Obiekt');
       let effect = "Niekontrolowane uszkodzenia";
@@ -1201,6 +1247,24 @@ export default function LeafletMap() {
       return { name, prob: (risk.value/100), effect };
     });
 
+    // fallback: if no affected features found, use top critical features by risk
+    if (!targetsInfo.length) {
+      const rows = features
+        .map((f) => ({ f, r: calculateFeatureRisk(f, features, graph) }))
+        .sort((a,b) => b.r.value - a.r.value)
+        .slice(0,5)
+        .map(({f,r}) => {
+          const name = String(f.properties?.name ?? f.properties?.label ?? 'Obiekt');
+          const layer = String(f.properties?.layer ?? "");
+          let effect = 'Niekontrolowane uszkodzenia';
+          if (layer.includes('bridge') || layer.includes('bridges')) effect = 'Most odcięty';
+          if (layer === 'power') effect = 'Brak prądu';
+          if (layer === 'hospitals') effect = 'Szpital na rezerwie lub offline';
+          return { name, prob: (r.value/100), effect };
+        });
+      targetsInfo = rows;
+    }
+
     const actions = [
       'Aktywuj procedury awaryjne',
       'Włącz backupy i przełączniki',
@@ -1208,6 +1272,8 @@ export default function LeafletMap() {
       'Zabezpiecz mosty i szlaki komunikacyjne'
     ];
 
+    // start alarm sound and show alert
+    startAlarm();
     setWarAlert({ title: 'ALERT: Wojna — atak w toku', actions, targets: targetsInfo });
     }
 
@@ -1239,6 +1305,9 @@ export default function LeafletMap() {
 
     simulationLayerRef.current = null;
     setSimulationRunning(false);
+    // stop alarm if running
+    stopAlarm();
+    setWarAlert(null);
   }
 
   return (
@@ -1259,7 +1328,7 @@ export default function LeafletMap() {
           <div className="bg-black/80 p-6 rounded-lg max-w-3xl text-white">
             <div className="flex justify-between items-start">
               <h2 className="text-xl font-bold">{warAlert.title}</h2>
-              <button onClick={() => setWarAlert(null)} className="ml-4 text-sm bg-white/10 px-2 py-1 rounded">Zamknij</button>
+              <button onClick={() => { stopAlarm(); setWarAlert(null); }} className="ml-4 text-sm bg-white/10 px-2 py-1 rounded">Zamknij</button>
             </div>
             <div className="mt-4">
               <div className="font-semibold">Zalecane działania</div>
