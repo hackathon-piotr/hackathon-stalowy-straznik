@@ -1152,7 +1152,7 @@ export default function LeafletMap() {
   }
 
   return (
-    <main className="relative min-h-screen w-full overflow-hidden bg-zinc-950 text-white flex flex-col">
+    <main className="relative h-screen w-full overflow-hidden bg-zinc-950 text-white flex flex-col">
       <header className="flex items-center justify-between px-4 py-3 bg-zinc-900/95 border-b border-white/10">
         <div className="text-sm font-semibold">City Resilience & Infrastructure Awareness Platform</div>
         <div className="flex items-center gap-6 text-sm">
@@ -1163,8 +1163,8 @@ export default function LeafletMap() {
         </div>
       </header>
 
-      <div className="flex flex-1 min-h-0">
-        <div className="w-2/3 border-r border-white/10 relative min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="w-2/3 border-r border-white/10 relative h-full overflow-hidden">
           <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
 
           <div className="absolute right-6 top-6 z-[1000] pointer-events-auto">
@@ -1284,7 +1284,7 @@ export default function LeafletMap() {
           </div>
         </div>
 
-        <aside className="w-1/3 p-4 overflow-y-auto pointer-events-auto bg-zinc-900/80 max-h-full">
+        <aside className="w-1/3 p-4 overflow-auto pointer-events-auto bg-zinc-900/80 h-full">
           <h2 className="text-lg font-semibold">City Status</h2>
           <div className="grid grid-cols-2 gap-3 mt-3">
             <div className="bg-white/5 p-3 rounded">
