@@ -810,10 +810,41 @@ export default function LeafletMap() {
 .popup-actions { margin-top:6px; display:flex; gap:6px; }
 .popup-actions button { background:#222; color:#fff; border-radius:6px; padding:6px 8px; border:1px solid #444; cursor:pointer; }
 .popup-actions button:hover { opacity:0.9; transform:translateY(-1px); }
-.city-outage-banner { position:absolute; left:50%; transform:translateX(-50%); top:64px; z-index:1500; background:#b91c1c; color:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5);} 
+.city-outage-banner { position:fixed; left:50%; transform:translateX(-50%); top:64px; z-index:1500; background:#b91c1c; color:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5);} 
 `;
     document.head.appendChild(style);
   }, []);
+
+  useEffect(() => {
+    // manage a floating banner element for city-level outages
+    let el = document.getElementById('city-outage-banner-el') as HTMLElement | null;
+    function updateBanner() {
+      el = document.getElementById('city-outage-banner-el') as HTMLElement | null;
+      if (cityPowerOutage || cityCommsOutage) {
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'city-outage-banner-el';
+          el.className = 'city-outage-banner';
+          document.body.appendChild(el);
+        }
+        el.innerHTML = `${cityPowerOutage ? '⚡ Brak prądu w mieście!' : ''}${
+          cityPowerOutage && cityCommsOutage ? ' · ' : ''
+        }${cityCommsOutage ? '📡 Brak łączności w mieście!' : ''}`;
+      } else {
+        if (el) {
+          el.remove();
+          el = null;
+        }
+      }
+    }
+
+    updateBanner();
+
+    return () => {
+      const existing = document.getElementById('city-outage-banner-el');
+      if (existing) existing.remove();
+    };
+  }, [cityPowerOutage, cityCommsOutage]);
 
   useEffect(() => {
     mapViewRef.current = mapView;
