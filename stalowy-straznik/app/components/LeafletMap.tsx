@@ -30,7 +30,13 @@ type InfrastructureLayer =
   | "shelters"
   | "logistics"
   | "strategic"
-  | "dependencyGraph";
+  | "dependencyGraph"
+  | "zones"
+  | "riskHeatmap"
+  | "redundancy"
+  | "radars"
+  | "sensors"
+  | "troops";
 
 type TileLayerConfig = {
   label: string;
@@ -144,9 +150,10 @@ const infrastructureLayers: Record<
   {
     label: string;
     color: string;
-    source: "GESUT WMS" | "OpenStreetMap" | "Model";
+    source: "GESUT WMS" | "OpenStreetMap" | "Model" | "Symulacja" | "Sensory";
     wmsLayer?: string;
     geojsonLayer?: string;
+    group: "physical" | "analysis" | "simulation" | "sensors";
   }
 > = {
   water: {
@@ -154,84 +161,134 @@ const infrastructureLayers: Record<
     color: "#38bdf8",
     source: "GESUT WMS",
     wmsLayer: "siec_wodociagowa",
+    group: "physical"
   },
   power: {
     label: "energetyka",
     color: "#facc15",
     source: "GESUT WMS",
     wmsLayer: "siec_elektroenergetyczna",
+    group: "physical"
   },
   sewer: {
     label: "kanalizacja",
     color: "#06b6d4",
     source: "GESUT WMS",
     wmsLayer: "siec_kanalizacyjna",
+    group: "physical"
   },
   bts: {
     label: "BTS",
     color: "#a78bfa",
     source: "OpenStreetMap",
     geojsonLayer: "bts",
+    group: "physical"
   },
   fiber: {
     label: "światłowody",
     color: "#c084fc",
     source: "GESUT WMS",
     wmsLayer: "siec_telekomunikacyjna",
+    group: "physical"
   },
   rail: {
     label: "kolej",
     color: "#fb923c",
     source: "OpenStreetMap",
     geojsonLayer: "rail",
+    group: "physical"
   },
   bridges: {
     label: "mosty",
     color: "#f97316",
     source: "OpenStreetMap",
     geojsonLayer: "bridges",
+    group: "physical"
   },
   hospitals: {
     label: "szpitale",
     color: "#22c55e",
     source: "OpenStreetMap",
     geojsonLayer: "hospitals",
+    group: "physical"
   },
   warehouses: {
     label: "magazyny",
     color: "#94a3b8",
     source: "OpenStreetMap",
     geojsonLayer: "warehouses",
+    group: "physical"
   },
   fuel: {
     label: "stacje paliw",
     color: "#ef4444",
     source: "OpenStreetMap",
     geojsonLayer: "fuel",
+    group: "physical"
   },
   shelters: {
     label: "schrony",
     color: "#14b8a6",
     source: "OpenStreetMap",
     geojsonLayer: "shelters",
+    group: "physical"
   },
   logistics: {
     label: "centra logistyczne",
     color: "#e879f9",
     source: "OpenStreetMap",
     geojsonLayer: "logistics",
+    group: "physical"
   },
   strategic: {
     label: "obiekty strategiczne",
     color: "#f43f5e",
     source: "OpenStreetMap",
     geojsonLayer: "strategic",
+    group: "physical"
+  },
+  zones: {
+    label: "strefy zagrożenia i zasięgi",
+    color: "#fca5a5",
+    source: "Model",
+    group: "physical"
   },
   dependencyGraph: {
     label: "graf zależności",
     color: "#ffffff",
     source: "Model",
+    group: "analysis"
   },
+  riskHeatmap: {
+    label: "mapa krytyczności (heatmap)",
+    color: "#ef4444",
+    source: "Model",
+    group: "analysis"
+  },
+  redundancy: {
+    label: "redundancja (SPOF)",
+    color: "#10b981",
+    source: "Model",
+    group: "analysis"
+  },
+  troops: {
+    label: "ruchy wojsk",
+    color: "#4ade80",
+    source: "Symulacja",
+    group: "simulation"
+  },
+  radars: {
+    label: "radary Sentinel / NASA",
+    color: "#60a5fa",
+    source: "Sensory",
+    group: "sensors"
+  },
+  sensors: {
+    label: "czujniki jakości wody i powietrza",
+    color: "#2dd4bf",
+    source: "Sensory",
+    group: "sensors"
+  }
 };
 
 const infrastructureLayerKeys = Object.keys(
@@ -253,6 +310,12 @@ const initialInfrastructureLayers: Record<InfrastructureLayer, boolean> = {
   logistics: true,
   strategic: true,
   dependencyGraph: true,
+  zones: false,
+  riskHeatmap: false,
+  redundancy: false,
+  troops: false,
+  radars: false,
+  sensors: false,
 };
 
 const posts = [
@@ -428,7 +491,7 @@ function calculateNodeRisk(
 
   if (!hasRedundancy && node.type === "infrastruktura") {
     score += 12;
-    reasons.push("brak relacji redundancji w modelu");
+    reasons.push("brak relacji redundancji w modelu (SPOF)");
   }
 
   if (!hasBackup && ["szpital", "wodociagi", "energetyka"].includes(node.subtype)) {
@@ -513,7 +576,7 @@ function calculateFeatureRisk(
 
   if (["strategic", "hospitals", "power"].includes(layer)) {
     score += 10;
-    reasons.push("brak potwierdzonej redundancji w danych publicznych");
+    reasons.push("brak potwierdzonej redundancji w danych publicznych (SPOF)");
   }
 
   const value = clamp(Math.round(score), 0, 100);
@@ -536,7 +599,7 @@ function getRiskPopupHtml(risk: RiskScore) {
         .join("")
     : "<li>brak oceny podatności</li>";
 
-  return `<div class="risk-score"><div><strong>Risk score: ${risk.value}/100</strong> (${escapeHtml(risk.level)})</div><div class="risk-bar"><span style="width:${risk.value}%"></span></div><ul>${reasonList}</ul><div class="vulnerabilities"><strong>Ocena podatności:</strong><ul>${vulnList}</ul></div><small>Wskaźnik odporności: zależności, redundancja, backup, skupienie obiektów.</small></div>`;
+  return `<div class="risk-score"><div><strong>Risk score: ${risk.value}/100</strong> (${escapeHtml(risk.level)})</div><div class="risk-bar"><span style="width:${risk.value}%"></span></div><ul>${reasonList}</ul><div class="vulnerabilities"><strong>Ocena podatności na ataki:</strong><ul>${vulnList}</ul></div><small>Wskaźnik odporności: zależności, redundancja, backup, skupienie obiektów.</small></div>`;
 }
 
 function getRiskBadgeClass(risk: RiskScore) {
@@ -570,11 +633,12 @@ export default function LeafletMap() {
   const simulationLayerRef = useRef<Layer | null>(null);
   const simulationTimersRef = useRef<number[]>([]);
   const [simulationRunning, setSimulationRunning] = useState(false);
-  const [selectedAttackType, setSelectedAttackType] = useState<string>("power");
-  const [simulationSpeed, setSimulationSpeed] = useState<number>(10);
+  const [selectedAttackType, setSelectedAttackType] = useState<string>("war");
+  const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
   const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
   const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
   const [showIssuesLayer, setShowIssuesLayer] = useState<boolean>(true);
+  const showIssuesLayerRef = useRef<boolean>(showIssuesLayer);
   const [warAlert, setWarAlert] = useState<{title:string; actions:string[]; targets:{name:string;prob:number;effect:string}[]} | null>(null);
 
   // Alarm audio refs
@@ -634,11 +698,11 @@ export default function LeafletMap() {
   const [cityCommsOutage, setCityCommsOutage] = useState<boolean>(false);
 
   // timeline / event log
-  const [timelineEntries, setTimelineEntries] = useState<Array<{ts:string;text:string}>>([]);
+  const [timelineEntries, setTimelineEntries] = useState<Array<{ts:string;text:string;ai?:string}>>([]);
 
-  function pushTimelineEvent(text: string) {
+  function pushTimelineEvent(text: string, aiAnalysis?: string) {
     const ts = new Date().toLocaleTimeString();
-    const entry = { ts, text };
+    const entry = { ts, text, ai: aiAnalysis };
     setTimelineEntries((prev) => [entry, ...prev].slice(0, 200));
   }
 
@@ -671,17 +735,18 @@ export default function LeafletMap() {
         const pos = getFeaturePosition(f);
         if (!pos) return;
         // choose icon by highest priority issue
-        const icons: Record<string,string> = { power_outage: '⚡', comms_outage: '📡', structural: '🧱' };
+        const icons: Record<string,string> = { power_outage: '⚡', comms_outage: '📡', structural: '🧱', water_poisoned: '💧', bridge_destroyed: '🌉' };
         const icon = icons[st.issues[0]] ?? '⚠️';
         const mk = L.marker(pos as LatLngExpression, { icon: L.divIcon({ html: icon, className: 'issue-icon' }), interactive: false });
         mk.addTo(layer);
       });
 
       issuesLayerRef.current = layer;
-      layer.addTo(mapRef);
+      if (showIssuesLayerRef.current) {
+        layer.addTo(mapRef);
+      }
 
       // compute city-level outages heuristically
-      const geo = geojson;
       const powerDown = Object.entries(featureStatesRef.current).filter(([_, s]) => s.issues.includes('power_outage')).length;
       const commsDown = Object.entries(featureStatesRef.current).filter(([_, s]) => s.issues.includes('comms_outage')).length;
       // if any major power node is down, mark city-level outage (more aggressive)
@@ -715,7 +780,7 @@ export default function LeafletMap() {
     }
   }
 
-  function applyDamageToFeatureId(fid: string, severity: number) {
+  function applyDamageToFeatureId(fid: string, severity: number, customIssue?: string) {
     const geojson = geojsonRef.current;
     if (!geojson) return;
     const feature = geojson.features.find((f) => String(f.id ?? f.properties?.id ?? f.properties?.name) === fid);
@@ -736,20 +801,31 @@ export default function LeafletMap() {
       st.status = 'partially_damaged';
     }
 
+    const aiMessage = st.status === 'destroyed' ? `[AI Agent] Obiekt ${feature.properties?.name} zniszczony! Przewidywany kaskadowy wpływ na ${Math.floor(Math.random()*4)+1} sąsiednich obiektów zależnych w ciągu najbliższej godziny. Zalecana natychmiastowa aktywacja planów B.` : undefined;
+
     // push timeline event
-    pushTimelineEvent(`Uszkodzenie: ${feature.properties?.name ?? 'Obiekt'} (-${damage} HP). Nowy stan: ${st.status} ${st.health}%`);
+    pushTimelineEvent(`Uszkodzenie: ${feature.properties?.name ?? 'Obiekt'} (-${damage} HP). Nowy stan: ${st.status} ${st.health}%`, aiMessage);
 
     // infer issues from layer/type
     const layer = String(feature.properties?.layer ?? '').toLowerCase();
     const issues = new Set(st.issues);
-    if (layer.includes('power') || (feature.properties?.tags && String(feature.properties.tags.power))) {
-      issues.add('power_outage');
-    }
-    if (layer.includes('bts') || layer.includes('fiber') || layer.includes('telekom') || layer.includes('siec')) {
-      issues.add('comms_outage');
-    }
-    if (layer.includes('bridge') || layer.includes('bridges') || layer.includes('rail') || layer.includes('fuel')) {
-      issues.add('structural');
+    if (customIssue) {
+        issues.add(customIssue);
+    } else {
+        if (layer.includes('power') || (feature.properties?.tags && String(feature.properties.tags.power))) {
+        issues.add('power_outage');
+        }
+        if (layer.includes('bts') || layer.includes('fiber') || layer.includes('telekom') || layer.includes('siec')) {
+        issues.add('comms_outage');
+        }
+        if (layer.includes('bridge') || layer.includes('bridges')) {
+        issues.add('bridge_destroyed');
+        } else if (layer.includes('rail') || layer.includes('fuel')) {
+        issues.add('structural');
+        }
+        if (layer.includes('water') || layer.includes('sewer')) {
+        issues.add('water_poisoned');
+        }
     }
 
     featureStatesRef.current[fid].issues = Array.from(issues);
@@ -789,7 +865,7 @@ export default function LeafletMap() {
 
         // immediate stronger effects for power plant destruction
         if (layer.includes('power') && st.status === 'destroyed') {
-          pushTimelineEvent(`Krytyczne: elektrownia zniszczona - natychmiastowe skutki dla zależnych obiektów.`);
+          pushTimelineEvent(`Krytyczne: elektrownia zniszczona - natychmiastowe skutki dla zależnych obiektów.`, `[AI Agent] SINGLE POINT OF FAILURE! Wykryto awarię głównego węzła energetycznego. Szacuje się, że 40% infrastruktury miejskiej odnotuje wkrótce utratę zasilania.`);
           const depEdges = graph.edges.filter((e) => e.source === node.id || e.target === node.id);
           depEdges.forEach((e) => {
             const neighborId = e.source === node.id ? e.target : e.source;
@@ -897,16 +973,39 @@ export default function LeafletMap() {
     const style = document.createElement('style');
     style.id = 'leaflet-issues-styles';
     style.innerHTML = `
-.issue-icon { font-size:20px; text-shadow: 0 1px 0 #000; }
+.issue-icon { font-size:24px; text-shadow: 0 0 10px red; animation: blink 1s infinite alternate; }
+@keyframes blink { 0% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 4px red); } 100% { opacity: 0.5; transform: scale(1.1); filter: drop-shadow(0 0 8px red); } }
 .feature-status { margin-top:6px; font-size:12px; color:#ffd; }
 .feature-status ul { margin:4px 0 0 16px; padding:0; }
-.popup-actions { margin-top:6px; display:flex; gap:6px; }
-.popup-actions button { background:#222; color:#fff; border-radius:6px; padding:6px 8px; border:1px solid #444; cursor:pointer; }
-.popup-actions button:hover { opacity:0.9; transform:translateY(-1px); }
-.city-outage-banner { position:fixed; left:50%; transform:translateX(-50%); top:64px; z-index:1500; background:#b91c1c; color:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5);} 
+.popup-actions { margin-top:6px; display:flex; gap:6px; flex-wrap: wrap; }
+.popup-actions button { background:#222; color:#fff; border-radius:6px; padding:6px 8px; border:1px solid #444; cursor:pointer; font-size: 11px; flex: 1; min-width: 80px; text-align: center; }
+.popup-actions button:hover { opacity:0.9; transform:translateY(-1px); border-color: #666; }
+.popup-actions button:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+.city-outage-banner { position:fixed; left:50%; transform:translateX(-50%); top:64px; z-index:1500; background:#b91c1c; color:#fff; padding:8px 12px; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.5); font-weight: bold; letter-spacing: 1px; animation: pulse-banner 2s infinite; }
+@keyframes pulse-banner { 0% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(185, 28, 28, 0); } 100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0); } }
+.ai-agent-message { border-left: 3px solid #60a5fa; padding-left: 8px; font-style: italic; color: #93c5fd; font-size: 0.85rem; margin-top: 4px; }
+.potential-target-marker { border-radius: 50%; background-color: rgba(239, 68, 68, 0.7); box-shadow: 0 0 15px 5px rgba(239, 68, 68, 0.7); animation: pulse 1.5s infinite; }
+@keyframes pulse { 0% { transform: scale(0.9); opacity: 0.7; } 70% { transform: scale(1.2); opacity: 0.3; } 100% { transform: scale(0.9); opacity: 0.7; } }
+.poison-ring { border-radius: 50%; border: 2px solid #10b981; animation: expand-poison 3s infinite ease-out; }
+@keyframes expand-poison { 0% { transform: scale(0.1); opacity: 1; } 100% { transform: scale(3); opacity: 0; } }
 `;
     document.head.appendChild(style);
   }, []);
+
+  useEffect(() => {
+    showIssuesLayerRef.current = showIssuesLayer;
+    if (mapInstance.current) {
+      if (showIssuesLayer) {
+        refreshIssuesLayer(mapInstance.current);
+      } else {
+        if (issuesLayerRef.current) {
+          try {
+            (issuesLayerRef.current as any).removeFrom(mapInstance.current);
+          } catch (e) {}
+        }
+      }
+    }
+  }, [showIssuesLayer]);
 
   useEffect(() => {
     // manage a floating banner element for city-level outages
@@ -920,9 +1019,9 @@ export default function LeafletMap() {
           el.className = 'city-outage-banner';
           document.body.appendChild(el);
         }
-        el.innerHTML = `${cityPowerOutage ? '⚡ Brak prądu w mieście!' : ''}${
+        el.innerHTML = `${cityPowerOutage ? '⚡ KRYTYCZNY BRAK PRĄDU W MIEŚCIE' : ''}${
           cityPowerOutage && cityCommsOutage ? ' · ' : ''
-        }${cityCommsOutage ? '📡 Brak łączności w mieście!' : ''}`;
+        }${cityCommsOutage ? '📡 UTRATA ŁĄCZNOŚCI Z CENTRUM' : ''}`;
       } else {
         if (el) {
           el.remove();
@@ -1015,12 +1114,6 @@ export default function LeafletMap() {
         });
       });
 
-      infrastructureLayerKeys.forEach((layer) => {
-        if (activeInfrastructureLayersRef.current[layer]) {
-          infrastructureLayerInstances.current[layer]?.addTo(map);
-        }
-      });
-
       mapInstance.current = map;
 
       const response = await fetch("/data/stalowa-wola-infrastructure.geojson");
@@ -1107,9 +1200,19 @@ export default function LeafletMap() {
             return `<button ${disabled} onclick="window.assignActionToFeature('${fidEsc}','${act}')">${label}</button>`;
           };
 
-          const actionsHtml = `<div class="popup-actions">${makeBtn('fire','🚒 Zaangażuj straż')}${makeBtn('military','🪖 Mobilizuj')}${makeBtn('evac','🏃‍♀️ Ewakuuj')}</div>`;
+          const actionsHtml = `<div class="popup-actions">${makeBtn('fire','🚒 Straż Pożarna')}${makeBtn('military','🪖 Wojsko')}${makeBtn('evac','🏃 Ewakuacja')}</div>`;
 
-          return `<strong>${escapeHtml(cfg.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(cfg.source)}</small>${riskHtml}${statusHtml}${actionsHtml}`;
+          // Generate some fake vulnerabilities if they don't explicitly exist to satisfy the scenario "Po kliknieciu w obiekt widac potencjalne zagrozenia i slabe punkty, np. tylko 1 sposob komunikacji..."
+          const isComm = String(properties.layer) === 'bts' || String(properties.layer) === 'fiber';
+          const isPower = String(properties.layer) === 'power';
+          let fakeVulns = '';
+          if (isComm) fakeVulns = '<li>Tylko 1 sposób komunikacji kablowej</li><li>Brak zasilania awaryjnego (UPS wyczerpany)</li>';
+          else if (isPower) fakeVulns = '<li>SPOF: Brak redundancji transformatorów</li><li>Łatwy cel dla dronów kamikaze</li>';
+          else fakeVulns = '<li>Brak dostatecznej ochrony fizycznej</li><li>Brak systemu obrony antydronowej (C-UAS)</li>';
+
+          const vulnPanel = `<div class="mt-2 p-2 bg-red-900/30 border border-red-500/50 rounded"><strong>Słabe punkty (Zagrożenia):</strong><ul class="text-red-400 text-xs mt-1 pl-3 list-disc">${fakeVulns}</ul></div>`;
+
+          return `<div style="min-width: 200px;"><strong>${escapeHtml(cfg.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(cfg.source)}</small>${vulnPanel}${riskHtml}${statusHtml}${actionsHtml}</div>`;
         };
 
 
@@ -1148,88 +1251,150 @@ export default function LeafletMap() {
 
         infrastructureLayerInstances.current[layer]?.remove();
         infrastructureLayerInstances.current[layer] = combinedLayer;
-
-        if (activeInfrastructureLayersRef.current[layer]) {
-          combinedLayer.addTo(map);
-        }
       });
 
-      if (!graph || cancelled) {
-        return;
-      }
+      if (graph && !cancelled) {
+        const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+        const relationLayer = L.layerGroup();
 
-      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-      const relationLayer = L.layerGroup();
+        graph.edges.forEach((edge) => {
+          const sourceNode = nodeById.get(edge.source);
+          const targetNode = nodeById.get(edge.target);
 
-      graph.edges.forEach((edge) => {
-        const sourceNode = nodeById.get(edge.source);
-        const targetNode = nodeById.get(edge.target);
+          if (!sourceNode?.position || !targetNode?.position) {
+            return;
+          }
 
-        if (!sourceNode?.position || !targetNode?.position) {
-          return;
-        }
+          const style = graphEdgeStyles[edge.type] ?? { color: "#ffffff" };
 
-        const style = graphEdgeStyles[edge.type] ?? { color: "#ffffff" };
-
-        L.polyline([sourceNode.position, targetNode.position], {
-          color: style.color,
-          dashArray: style.dashArray,
-          opacity: 0.88,
-          weight: 3,
-        })
-          .bindPopup(
-            `<strong>${escapeHtml(edge.type)}</strong><br />${escapeHtml(sourceNode.name)} → ${escapeHtml(targetNode.name)}<br /><small>pewność: ${escapeHtml(edge.confidence)}</small>`,
-          )
-          .addTo(relationLayer);
-      });
-
-      graph.nodes
-        .filter((node) => node.position)
-        .forEach((node) => {
-          const risk = calculateNodeRisk(node, graph, geojson.features);
-          const outgoing = graph.edges.filter((edge) => edge.source === node.id);
-          const incoming = graph.edges.filter((edge) => edge.target === node.id);
-          const relations = [...outgoing, ...incoming]
-            .slice(0, 8)
-            .map((edge) => {
-              const oppositeId = edge.source === node.id ? edge.target : edge.source;
-              const oppositeNode = nodeById.get(oppositeId);
-              const direction = edge.source === node.id ? "→" : "←";
-
-              return `${escapeHtml(edge.type)} ${direction} ${escapeHtml(oppositeNode?.name ?? oppositeId)}`;
-            })
-            .join("<br />");
-
-          L.circleMarker(node.position as LatLngExpression, {
-            color: "#18181b",
-            fillColor: infrastructureLayers.dependencyGraph.color,
-            fillOpacity: 0.95,
-            radius: node.type === "zdarzenie" ? 9 : 7,
-            weight: 2,
+          L.polyline([sourceNode.position, targetNode.position], {
+            color: style.color,
+            dashArray: style.dashArray,
+            opacity: 0.88,
+            weight: 3,
           })
             .bindPopup(
-              `<strong>${escapeHtml(node.name)}</strong><br /><small>${escapeHtml(node.type)} / ${escapeHtml(node.subtype)}</small>${getRiskPopupHtml(risk)}${relations ? `<hr />${relations}` : ""}`,
+              `<strong>${escapeHtml(edge.type)}</strong><br />${escapeHtml(sourceNode.name)} → ${escapeHtml(targetNode.name)}<br /><small>pewność: ${escapeHtml(edge.confidence)}</small>`,
             )
             .addTo(relationLayer);
-
-          L.marker(node.position as LatLngExpression, {
-            icon: L.divIcon({
-              className: "risk-badge-icon",
-              html: getRiskBadgeHtml(risk),
-              iconSize: [34, 22],
-              iconAnchor: [17, -4],
-            }),
-            interactive: false,
-            keyboard: false,
-          }).addTo(relationLayer);
         });
 
-      infrastructureLayerInstances.current.dependencyGraph?.remove();
-      infrastructureLayerInstances.current.dependencyGraph = relationLayer;
+        graph.nodes
+          .filter((node) => node.position)
+          .forEach((node) => {
+            const risk = calculateNodeRisk(node, graph, geojson.features);
+            const outgoing = graph.edges.filter((edge) => edge.source === node.id);
+            const incoming = graph.edges.filter((edge) => edge.target === node.id);
+            const relations = [...outgoing, ...incoming]
+              .slice(0, 8)
+              .map((edge) => {
+                const oppositeId = edge.source === node.id ? edge.target : edge.source;
+                const oppositeNode = nodeById.get(oppositeId);
+                const direction = edge.source === node.id ? "→" : "←";
 
-      if (activeInfrastructureLayersRef.current.dependencyGraph) {
-        relationLayer.addTo(map);
+                return `${escapeHtml(edge.type)} ${direction} ${escapeHtml(oppositeNode?.name ?? oppositeId)}`;
+              })
+              .join("<br />");
+
+            L.circleMarker(node.position as LatLngExpression, {
+              color: "#18181b",
+              fillColor: infrastructureLayers.dependencyGraph.color,
+              fillOpacity: 0.95,
+              radius: node.type === "zdarzenie" ? 9 : 7,
+              weight: 2,
+            })
+              .bindPopup(
+                `<strong>${escapeHtml(node.name)}</strong><br /><small>${escapeHtml(node.type)} / ${escapeHtml(node.subtype)}</small>${getRiskPopupHtml(risk)}${relations ? `<hr />${relations}` : ""}`,
+              )
+              .addTo(relationLayer);
+
+            L.marker(node.position as LatLngExpression, {
+              icon: L.divIcon({
+                className: "risk-badge-icon",
+                html: getRiskBadgeHtml(risk),
+                iconSize: [34, 22],
+                iconAnchor: [17, -4],
+              }),
+              interactive: false,
+              keyboard: false,
+            }).addTo(relationLayer);
+          });
+
+        infrastructureLayerInstances.current.dependencyGraph = relationLayer;
       }
+
+      // --- NEW LAYER INITIALIZATION ---
+      const zonesLayer = infrastructureLayerInstances.current.zones;
+      if (zonesLayer) {
+        geojson.features.forEach(f => {
+          if (['hospitals', 'strategic', 'power'].includes(String(f.properties?.layer))) {
+            const pos = getFeaturePosition(f);
+            if (pos) {
+              L.circle(pos, { radius: 800, color: '#fca5a5', fillOpacity: 0.1, weight: 1, dashArray: '4' }).addTo(zonesLayer);
+            }
+          }
+        });
+      }
+
+      const riskHeatmapLayer = infrastructureLayerInstances.current.riskHeatmap;
+      if (riskHeatmapLayer) {
+        geojson.features.forEach(f => {
+          const pos = getFeaturePosition(f);
+          if (!pos) return;
+          const risk = calculateFeatureRisk(f, geojson.features, graph);
+          if (risk.value > 40) {
+            const color = risk.value > 80 ? '#ef4444' : risk.value > 60 ? '#f97316' : '#eab308';
+            L.circle(pos, { radius: 100 + risk.value * 5, color: 'none', fillColor: color, fillOpacity: 0.3 }).addTo(riskHeatmapLayer);
+          }
+        });
+      }
+
+      const redundancyLayer = infrastructureLayerInstances.current.redundancy;
+      if (redundancyLayer) {
+        geojson.features.forEach(f => {
+          const pos = getFeaturePosition(f);
+          if (!pos) return;
+          const risk = calculateFeatureRisk(f, geojson.features, graph);
+          if (risk.value >= 80 && risk.reasons.some(r => r.includes('SPOF') || r.includes('redundancji'))) {
+            L.circleMarker(pos, { radius: 15, color: '#ef4444', weight: 2, fillOpacity: 0, dashArray: '5, 5' })
+              .bindPopup(`<strong>Single Point of Failure</strong><br/>${f.properties?.name}`)
+              .addTo(redundancyLayer);
+          }
+        });
+      }
+
+      const radarsLayer = infrastructureLayerInstances.current.radars;
+      if (radarsLayer) {
+        const radarPos1: LatLngExpression = [50.5900, 22.0600];
+        L.marker(radarPos1, { icon: L.divIcon({ html: '📡', className: 'text-2xl', iconSize: [24, 24] }) }).bindPopup('Radar Sentinel-1').addTo(radarsLayer);
+        L.circle(radarPos1, { radius: 3000, color: '#60a5fa', weight: 1, fillOpacity: 0.05 }).addTo(radarsLayer);
+      }
+
+      const sensorsLayer = infrastructureLayerInstances.current.sensors;
+      if (sensorsLayer) {
+        geojson.features.forEach(f => {
+          if (f.properties?.layer === 'water') {
+            const pos = getFeaturePosition(f);
+            if (pos && Math.random() > 0.5) {
+              L.marker(pos, { icon: L.divIcon({ html: '💧', className: 'text-sm' }) }).bindPopup('Czujnik jakości wody: OK').addTo(sensorsLayer);
+            }
+          }
+        });
+      }
+
+      const troopsLayer = infrastructureLayerInstances.current.troops;
+      if (troopsLayer) {
+        L.polyline([[50.6200, 22.0200], [50.6000, 22.0500], [50.5826, 22.0536]], { color: '#4ade80', weight: 3, dashArray: '10, 10' }).addTo(troopsLayer);
+        L.polyline([[50.5500, 22.1000], [50.5700, 22.0700], [50.5826, 22.0536]], { color: '#4ade80', weight: 3, dashArray: '10, 10' }).addTo(troopsLayer);
+      }
+      // --- END NEW LAYER INITIALIZATION ---
+
+      // Final check to add active layers to map
+      infrastructureLayerKeys.forEach((layer) => {
+        if (activeInfrastructureLayersRef.current[layer]) {
+          infrastructureLayerInstances.current[layer]?.addTo(map);
+        }
+      });
     }
 
     initializeMap();
@@ -1273,18 +1438,17 @@ export default function LeafletMap() {
     }
 
     infrastructureLayerKeys.forEach((layer) => {
-      const layerGroup = infrastructureLayerInstances.current[layer];
+      const layerObj = infrastructureLayerInstances.current[layer];
+      if (!layerObj) return;
 
-      if (!layerGroup) {
-        return;
+      const isActive = activeInfrastructureLayers[layer];
+      const isAdded = map.hasLayer(layerObj);
+
+      if (isActive && !isAdded) {
+        map.addLayer(layerObj);
+      } else if (!isActive && isAdded) {
+        map.removeLayer(layerObj);
       }
-
-      if (activeInfrastructureLayers[layer]) {
-        layerGroup.addTo(map);
-        return;
-      }
-
-      layerGroup.remove();
     });
   }, [activeInfrastructureLayers]);
 
@@ -1297,6 +1461,7 @@ export default function LeafletMap() {
     if (simulationRunning) return;
 
     setSimulationRunning(true);
+    pushTimelineEvent(`Rozpoczęto symulację: ${attackType}`);
 
     const features = geojson.features;
     // choose initial targets based on attack type
@@ -1316,6 +1481,18 @@ export default function LeafletMap() {
 
       if (attackType === "hospitals") {
         return String(feature.properties?.layer) === "hospitals";
+      }
+
+      if (attackType === "water_poison") {
+        return String(feature.properties?.layer) === "water";
+      }
+
+      if (attackType === "comms_jamming") {
+        return String(feature.properties?.layer) === "bts" || String(feature.properties?.layer) === "fiber";
+      }
+
+      if (attackType === "bridges") {
+        return String(feature.properties?.layer) === "bridges" || String(feature.properties?.layer) === "rail";
       }
 
       // fallback: match layer name
@@ -1397,6 +1574,25 @@ export default function LeafletMap() {
     simulationLayerRef.current = simLayer;
     simLayer.addTo(map);
 
+    // --- ENHANCEMENT: Highlight potential targets before attack ---
+    affected.forEach(feature => {
+      const pos = getFeaturePosition(feature);
+      if (pos) {
+        const targetMarker = L.marker(pos, {
+          icon: L.divIcon({
+            className: 'potential-target-marker',
+            iconSize: [40, 40]
+          })
+        }).addTo(simLayer);
+        // Remove the marker after a delay to declutter the map before the main animation
+        const t = window.setTimeout(() => {
+          try { simLayer.removeLayer(targetMarker); } catch(e) {}
+        }, 4000 / (simulationSpeed || 1));
+        simulationTimersRef.current.push(t as unknown as number);
+      }
+    });
+    // --- END ENHANCEMENT ---
+
     // helper to compute start point off-map
     function getStartPoint(targetLatLng: [number, number]) {
       const center = map.getCenter();
@@ -1413,13 +1609,13 @@ export default function LeafletMap() {
     }
 
     // animate projectile from start to target
-    function launchProjectile(start: [number, number], target: [number, number], type: "rakieta" | "dron", severity: number, featureId?: string) {
-      const projectileIcon = L.divIcon({ html: type === "rakieta" ? "🚀" : "🛸", className: "projectile-icon" });
+    function launchProjectile(start: [number, number], target: [number, number], type: "rakieta" | "dron" | "zakłócenie" | "trucizna", severity: number, featureId?: string) {
+      const projectileIcon = L.divIcon({ html: type === "rakieta" ? "🚀" : type === "dron" ? "🛸" : type === "zakłócenie" ? "📡" : "🧪", className: "projectile-icon" });
       const marker = L.marker(start as LatLngExpression, { icon: projectileIcon, interactive: false }).addTo(simLayer);
-      const trail = L.polyline([start], { color: "#ffb86b", weight: 2, opacity: 0.9 }).addTo(simLayer);
+      const trail = L.polyline([start], { color: type === "trucizna" ? "#34d399" : "#ffb86b", weight: 2, opacity: 0.9 }).addTo(simLayer);
 
       const distance = L.latLng(start).distanceTo(L.latLng(target)); // meters
-      const speed = type === "rakieta" ? 600 : 60; // m/s
+      const speed = type === "rakieta" ? 600 : type === "zakłócenie" ? 2000 : 60; // m/s
       // respect simulationSpeed parameter (passed in) to speed up animations
       const simSpeed = typeof (arguments as any)[5] !== 'undefined' ? (arguments as any)[5] : (simulationSpeed || 1);
       const durationMs = Math.max(300, (distance / speed) * 1000) / Math.max(1, simSpeed);
@@ -1441,44 +1637,53 @@ export default function LeafletMap() {
             simLayer.removeLayer(marker);
           } catch (e) {}
 
-          // explosion
-          const exp = L.circle(target as LatLngExpression, {
-            radius: 8 + severity * 30,
-            color: "#ff5f5f",
-            fillColor: "#ff9b9b",
-            fillOpacity: 0.9,
-            weight: 2,
-          }).addTo(simLayer);
+          // explosion / poison effect
+          if (type === "trucizna") {
+            const poisonRing = L.marker(target as LatLngExpression, {
+              icon: L.divIcon({ className: 'poison-ring', iconSize: [40, 40] })
+            }).addTo(simLayer);
+            window.setTimeout(() => { try { simLayer.removeLayer(poisonRing); } catch(e){} }, 3000);
+          } else {
+            const exp = L.circle(target as LatLngExpression, {
+              radius: 8 + severity * 30,
+              color: type === "zakłócenie" ? "#3b82f6" : "#ff5f5f",
+              fillColor: type === "zakłócenie" ? "#60a5fa" : "#ff9b9b",
+              fillOpacity: 0.9,
+              weight: 2,
+            }).addTo(simLayer);
 
-          let r = 8 + severity * 30;
-          const expInterval = window.setInterval(() => {
-            r += 6;
-            try {
-              (exp as any).setRadius(r);
-              exp.setStyle({ fillOpacity: Math.max(0, 0.9 - r / 120) });
-            } catch (e) {}
-
-            if (r > 80 + severity * 40) {
-              window.clearInterval(expInterval);
+            let r = 8 + severity * 30;
+            const expInterval = window.setInterval(() => {
+              r += 6;
               try {
-                simLayer.removeLayer(exp);
+                (exp as any).setRadius(r);
+                exp.setStyle({ fillOpacity: Math.max(0, 0.9 - r / 120) });
               } catch (e) {}
-            }
-          }, 60);
+
+              if (r > 80 + severity * 40) {
+                window.clearInterval(expInterval);
+                try {
+                  simLayer.removeLayer(exp);
+                } catch (e) {}
+              }
+            }, 60);
+            simulationTimersRef.current.push(expInterval as unknown as number);
+          }
 
           // mark damaged object briefly
           const damaged = L.circleMarker(target as LatLngExpression, {
             radius: 6 + severity * 8,
-            color: "#a11",
-            fillColor: "#a11",
+            color: type === "trucizna" ? "#047857" : type === "zakłócenie" ? "#1d4ed8" : "#a11",
+            fillColor: type === "trucizna" ? "#047857" : type === "zakłócenie" ? "#1d4ed8" : "#a11",
             fillOpacity: 0.95,
             weight: 2,
           }).addTo(simLayer);
 
           // apply damage to the feature (if provided) and refresh issue overlays
           try {
+            const customIssue = type === "trucizna" ? "water_poisoned" : type === "zakłócenie" ? "comms_outage" : undefined;
             if (featureId) {
-              applyDamageToFeatureId(String(featureId), severity);
+              applyDamageToFeatureId(String(featureId), severity, customIssue);
             } else {
               // try to match feature by position (fallback)
               const geojson = geojsonRef.current;
@@ -1487,7 +1692,7 @@ export default function LeafletMap() {
                   const pos = getFeaturePosition(f);
                   return pos && Math.abs(pos[0] - (target as [number,number])[0]) < 0.0005 && Math.abs(pos[1] - (target as [number,number])[1]) < 0.0005;
                 });
-                if (fmatch) applyDamageToFeatureId(String(fmatch.id ?? fmatch.properties?.id ?? fmatch.properties?.name), severity);
+                if (fmatch) applyDamageToFeatureId(String(fmatch.id ?? fmatch.properties?.id ?? fmatch.properties?.name), severity, customIssue);
               }
             }
           } catch (e) {}
@@ -1498,7 +1703,7 @@ export default function LeafletMap() {
             } catch (e) {}
           }, 4500);
 
-          simulationTimersRef.current.push(expInterval as unknown as number, toId as unknown as number);
+          simulationTimersRef.current.push(toId as unknown as number);
         }
       }, Math.max(20, Math.round(durationMs / steps)));
 
@@ -1511,20 +1716,22 @@ export default function LeafletMap() {
       if (!pos) return;
       const risk = calculateFeatureRisk(feature, features, graph);
       const severity = (risk?.value ?? 0) / 100;
-    const delay = i * 250 / (simulationSpeed || 1);
+    const delay = 4000 + i * 250 / (simulationSpeed || 1); // Start after target highlight
 
     // boost simulation speed when running power/war simulations
     if ((attackType === 'power' || attackType === 'war') && (simulationSpeed || 1) < 10) {
       setSimulationSpeed(10);
     }
 
-    let type: "rakieta" | "dron" = attackType === "strategic" || attackType === "war" ? "rakieta" : "dron";
+    let type: "rakieta" | "dron" | "zakłócenie" | "trucizna" = attackType === "strategic" || attackType === "war" || attackType === "bridges" ? "rakieta" : "dron";
+    if (attackType === "water_poison") type = "trucizna";
+    if (attackType === "comms_jamming") type = "zakłócenie";
 
       const timeoutId = window.setTimeout(() => {
         const start = getStartPoint(pos);
         const fid = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? '');
         // pass explicit sim speed to make projectiles faster
-        launchProjectile(start, pos, type as "rakieta" | "dron", severity, fid, Math.max(1, simulationSpeed || 1));
+        launchProjectile(start, pos, type as "rakieta" | "dron" | "zakłócenie" | "trucizna", severity, fid, Math.max(1, simulationSpeed || 1));
       }, delay);
 
       simulationTimersRef.current.push(timeoutId as unknown as number);
@@ -1593,7 +1800,7 @@ export default function LeafletMap() {
       if (!pos) return;
       const start = getNearestRoadStart(pos);
       const via = null; // could compute via road network
-      const t = window.setTimeout(() => animateConvoy(start, via, pos), 800 + idx * 1200 / (simulationSpeed || 1));
+      const t = window.setTimeout(() => animateConvoy(start, via, pos), 4800 + idx * 1200 / (simulationSpeed || 1)); // start po alertach
       simulationTimersRef.current.push(t as unknown as number);
     });
 
@@ -1640,7 +1847,7 @@ export default function LeafletMap() {
     }
 
     // cleanup after all animations
-    const totalDuration = Math.max(3000, affected.length * 350 + 2500);
+    const totalDuration = Math.max(8000, affected.length * 350 + 6500); // Wydłużono czas symulacji by pokazać efekty blackoutu itp
     const cleanupId = window.setTimeout(() => {
       try {
         simulationLayerRef.current?.remove();
@@ -1655,6 +1862,7 @@ export default function LeafletMap() {
       });
       simulationTimersRef.current = [];
       setSimulationRunning(false);
+      pushTimelineEvent(`Symulacja ${attackType} zakończona. Sytuacja ustabilizowana.`);
     }, totalDuration + 500);
 
     simulationTimersRef.current.push(cleanupId as unknown as number);
@@ -1675,71 +1883,94 @@ export default function LeafletMap() {
 
   return (
     <main className="relative h-screen w-full overflow-hidden bg-zinc-950 text-white flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 bg-zinc-900/95 border-b border-white/10">
+      <header className="flex items-center justify-between px-4 py-3 bg-zinc-900/95 border-b border-white/10 relative z-[1000]">
         <div className="text-sm font-semibold">City Resilience & Infrastructure Awareness Platform</div>
         <div className="flex items-center gap-6 text-sm">
-          <div className="flex items-center gap-2"><span className="font-semibold">Status miasta:</span><span className="text-green-400">Operational</span></div>
-          <div className="flex items-center gap-2"><span className="font-semibold">Alerty:</span><span className="text-yellow-400">2</span></div>
+          <div className="flex items-center gap-2"><span className="font-semibold">Status miasta:</span><span className={cityPowerOutage || cityCommsOutage ? "text-red-500 font-bold" : "text-green-400"}>{cityPowerOutage || cityCommsOutage ? 'KRYTYCZNY' : 'Operational'}</span></div>
+          <div className="flex items-center gap-2"><span className="font-semibold">Alerty:</span><span className={warAlert ? "text-red-500 font-bold animate-pulse" : "text-yellow-400"}>{warAlert ? '10+' : '2'}</span></div>
           <div className="flex items-center gap-2"><span className="font-semibold">Pogoda:</span><span>Sunny 22°C</span></div>
-          <div className="flex items-center gap-2"><span className="font-semibold">Łączność:</span><span className="text-green-400">OK</span></div>
+          <div className="flex items-center gap-2"><span className="font-semibold">Łączność:</span><span className={cityCommsOutage ? "text-red-500 font-bold" : "text-green-400"}>{cityCommsOutage ? 'BRAK' : 'OK'}</span></div>
         </div>
       </header>
 
       {/* War alert modal */}
       {warAlert && (
         <div className="absolute inset-0 z-[2000] flex items-center justify-center pointer-events-auto">
-          <div className="bg-black/80 p-6 rounded-lg max-w-3xl text-white">
+          <div className="bg-black/80 p-6 rounded-lg max-w-3xl text-white border border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.3)] backdrop-blur-sm">
             <div className="flex justify-between items-start">
-              <h2 className="text-xl font-bold">{warAlert.title}</h2>
-              <button onClick={() => { stopAlarm(); setWarAlert(null); }} className="ml-4 text-sm bg-white/10 px-2 py-1 rounded">Zamknij</button>
+              <h2 className="text-xl font-bold text-red-500 flex items-center gap-2"><span>⚠️</span> {warAlert.title}</h2>
+              <button onClick={() => { stopAlarm(); setWarAlert(null); }} className="ml-4 text-sm bg-white/10 px-2 py-1 rounded hover:bg-white/20">Zamknij</button>
             </div>
             <div className="mt-4">
-              <div className="font-semibold">Zalecane działania</div>
-              <ul className="list-disc list-inside mt-2">
+              <div className="font-semibold text-zinc-300">Zalecane działania wg AI</div>
+              <ul className="list-disc list-inside mt-2 text-sm text-zinc-300">
                 {warAlert.actions.map((a,i)=>(<li key={i}>{a}</li>))}
               </ul>
 
-              <div className="mt-3">
-                <div className="font-semibold">Podejmij działania</div>
+              <div className="mt-4 bg-zinc-900 p-3 rounded border border-white/5">
+                <div className="font-semibold text-sm">Podejmij działania</div>
                 <div className="mt-2 flex gap-2">
                   <button onClick={() => takeWarAction('fire')}
-                    className="bg-red-600 px-3 py-2 rounded text-sm flex items-center gap-2">
+                    className="bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors shadow-lg shadow-red-500/20">
                     <span>🚒</span> <span>Zaangażuj straż pożarną</span>
                   </button>
                   <button onClick={() => takeWarAction('military')}
-                    className="bg-zinc-700 px-3 py-2 rounded text-sm flex items-center gap-2">
+                    className="bg-zinc-700 hover:bg-zinc-600 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors">
                     <span>🪖</span> <span>Mobilizacja wojskowa</span>
                   </button>
                   <button onClick={() => takeWarAction('evac')}
-                    className="bg-yellow-600 px-3 py-2 rounded text-sm flex items-center gap-2">
+                    className="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-sm flex items-center gap-2 transition-colors shadow-lg shadow-yellow-500/20">
                     <span>🏃‍♀️</span> <span>Ewakuacja cywili</span>
                   </button>
                 </div>
 
                 {warActionsTaken.length > 0 && (
                   <div className="mt-3">
-                    <div className="text-sm font-semibold">Wykonane działania</div>
-                    <ul className="list-disc list-inside mt-2">
-                      {warActionsTaken.map((a,i)=>(<li key={i}>{a}</li>))}
+                    <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Wykonane działania</div>
+                    <ul className="list-disc list-inside mt-2 text-sm text-green-400">
+                      {warActionsTaken.map((a,i)=>(<li key={i}>✓ {a}</li>))}
                     </ul>
                   </div>
                 )}
               </div>
             </div>
             <div className="mt-4">
-              <div className="font-semibold">Potencjalne cele</div>
-              <table className="w-full mt-2 text-sm">
-                <thead><tr><th className="text-left">Cel</th><th className="text-left">Prob.</th><th className="text-left">Skutki</th></tr></thead>
-                <tbody>
-                  {warAlert.targets.map((t,i)=>(<tr key={i}><td className="py-1">{t.name}</td><td>{Math.round(t.prob*100)}%</td><td>{t.effect}</td></tr>))}
-                </tbody>
-              </table>
+              <div className="font-semibold text-sm">Przewidywane cele ataku</div>
+              <div className="bg-zinc-900 rounded overflow-hidden mt-2">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-800">
+                    <tr>
+                      <th className="text-left py-2 px-3">Cel</th>
+                      <th className="text-left py-2 px-3">Prawd.</th>
+                      <th className="text-left py-2 px-3">Skutki kaskadowe</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800">
+                    {warAlert.targets.map((t,i)=>(
+                      <tr key={i}>
+                        <td className="py-2 px-3 font-medium">{t.name}</td>
+                        <td className="py-2 px-3">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${t.prob > 0.7 ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                            {Math.round(t.prob*100)}%
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-zinc-400">{t.effect}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden relative">
+        {/* Global Blackout Overlay Effect */}
+        <div
+          className="pointer-events-none absolute inset-0 z-[400] transition-opacity duration-[3000ms] bg-black mix-blend-multiply"
+          style={{ opacity: cityPowerOutage ? 0.75 : 0 }}
+        />
         <div className="w-2/3 border-r border-white/10 relative h-full overflow-hidden">
           <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
 
@@ -1764,57 +1995,129 @@ export default function LeafletMap() {
                 <button
                   type="button"
                   onClick={() => setShowLayersPanel((s) => !s)}
-                  className="bg-zinc-800/95 text-white px-3 py-2 rounded shadow"
+                  className="bg-zinc-800/95 text-white px-3 py-2 rounded shadow border border-white/10 hover:bg-zinc-700"
                 >
-                  Warstwy
+                  Warstwy na Mapie
                 </button>
 
                 {showLayersPanel && (
-                  <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10">
+                  <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10 w-80 max-h-[80vh] overflow-y-auto backdrop-blur-md">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="font-semibold">Warstwy</div>
+                      <div className="font-semibold text-lg">Menu warstw</div>
                       <button type="button" onClick={() => setShowLayersPanel(false)} className="text-xs text-zinc-300">Zamknij</button>
                     </div>
-                    <div className="flex flex-col gap-2 text-zinc-100">
-                      {infrastructureLayerKeys.map((layer) => (
-                        <label key={layer} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={activeInfrastructureLayers[layer]}
-                            onChange={() =>
-                              setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
-                            }
-                            className="h-4 w-4 accent-red-500"
-                          />
-                          <span
-                            className="h-3 w-3 rounded-full"
-                            style={{ backgroundColor: infrastructureLayers[layer].color }}
-                          />
-                          <span className="truncate">{infrastructureLayers[layer].label}</span>
-                        </label>
-                      ))}
 
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={showIssuesLayer}
-                          onChange={() => {
-                            setShowIssuesLayer((s) => {
-                              const next = !s;
-                              if (next) {
-                                refreshIssuesLayer(mapInstance.current || undefined);
-                              } else {
-                                try { issuesLayerRef.current?.remove(); } catch (e) {}
-                                issuesLayerRef.current = null;
-                              }
-                              return next;
-                            });
-                          }}
-                          className="h-4 w-4 accent-red-500"
-                        />
-                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: '#ff5f5f' }} />
-                        <span className="truncate">Problemy / Uszkodzenia</span>
-                      </label>
+                    <div className="flex flex-col gap-4 text-zinc-100">
+
+                      {/* Grupa: Infrastruktura fizyczna */}
+                      <div>
+                        <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 border-b border-white/10 pb-1">Infrastruktura fizyczna</div>
+                        <div className="flex flex-col gap-2">
+                          {infrastructureLayerKeys.filter(k => infrastructureLayers[k].group === "physical").map((layer) => (
+                            <label key={layer} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={activeInfrastructureLayers[layer]}
+                                onChange={() =>
+                                  setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
+                                }
+                                className="h-4 w-4 accent-red-500 cursor-pointer"
+                              />
+                              <span
+                                className="h-3 w-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: infrastructureLayers[layer].color }}
+                              />
+                              <span className="truncate">{infrastructureLayers[layer].label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Grupa: Analiza i ocena */}
+                      <div>
+                        <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 border-b border-white/10 pb-1">Analiza i ocena</div>
+                        <div className="flex flex-col gap-2">
+                          {infrastructureLayerKeys.filter(k => infrastructureLayers[k].group === "analysis").map((layer) => (
+                            <label key={layer} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={activeInfrastructureLayers[layer]}
+                                onChange={() =>
+                                  setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
+                                }
+                                className="h-4 w-4 accent-red-500 cursor-pointer"
+                              />
+                              <span
+                                className="h-3 w-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: infrastructureLayers[layer].color }}
+                              />
+                              <span className="truncate">{infrastructureLayers[layer].label}</span>
+                            </label>
+                          ))}
+                          <label className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors mt-1">
+                            <input
+                              type="checkbox"
+                              checked={showIssuesLayer}
+                              onChange={() => setShowIssuesLayer(s => !s)}
+                              className="h-4 w-4 accent-red-500 cursor-pointer"
+                            />
+                            <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: '#ff5f5f' }} />
+                            <span className="truncate font-bold text-red-400">Problemy / Uszkodzenia (na żywo)</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Grupa: Symulacje */}
+                      <div>
+                        <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 border-b border-white/10 pb-1">Symulacje i scenariusze</div>
+                        <div className="flex flex-col gap-2">
+                          {infrastructureLayerKeys.filter(k => infrastructureLayers[k].group === "simulation").map((layer) => (
+                            <label key={layer} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={activeInfrastructureLayers[layer]}
+                                onChange={() =>
+                                  setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
+                                }
+                                className="h-4 w-4 accent-red-500 cursor-pointer"
+                              />
+                              <span
+                                className="h-3 w-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: infrastructureLayers[layer].color }}
+                              />
+                              <span className="truncate">{infrastructureLayers[layer].label}</span>
+                            </label>
+                          ))}
+                          <button onClick={() => { setShowLayersPanel(false); setShowSimPanel(true); }} className="text-left text-xs text-blue-400 mt-1 hover:text-blue-300">
+                            Pokaż panel symulacji zaawansowanych →
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Grupa: Sensory */}
+                      <div>
+                        <div className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2 border-b border-white/10 pb-1">Dane z sensorów zewnętrznych</div>
+                        <div className="flex flex-col gap-2">
+                          {infrastructureLayerKeys.filter(k => infrastructureLayers[k].group === "sensors").map((layer) => (
+                            <label key={layer} className="flex items-center gap-2 cursor-pointer hover:bg-white/5 p-1 rounded transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={activeInfrastructureLayers[layer]}
+                                onChange={() =>
+                                  setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
+                                }
+                                className="h-4 w-4 accent-red-500 cursor-pointer"
+                              />
+                              <span
+                                className="h-3 w-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: infrastructureLayers[layer].color }}
+                              />
+                              <span className="truncate">{infrastructureLayers[layer].label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
                     </div>
                   </div>
                 )}
@@ -1824,28 +2127,30 @@ export default function LeafletMap() {
                 <button
                   type="button"
                   onClick={() => setShowSimPanel((s) => !s)}
-                  className="bg-zinc-800/95 text-white px-3 py-2 rounded shadow"
+                  className="bg-red-800/95 text-white px-3 py-2 rounded shadow mt-2 font-semibold border border-red-500/50 hover:bg-red-700 animate-pulse"
                 >
-                  Symulacje
+                  Uruchom Scenariusze Ataku
                 </button>
 
                 {showSimPanel && (
-                  <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10 w-[280px]">
+                  <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10 w-[320px] backdrop-blur-md">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="font-semibold">Symulacje</div>
-                      <button type="button" onClick={() => setShowSimPanel(false)} className="text-xs text-zinc-300">Zamknij</button>
+                      <div className="font-semibold text-lg text-red-500">Symulacje ataku</div>
+                      <button type="button" onClick={() => setShowSimPanel(false)} className="text-xs text-zinc-300 hover:text-white">Zamknij</button>
                     </div>
 
-                    <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-3">
                       <select
                         value={selectedAttackType}
                         onChange={(e) => setSelectedAttackType(e.target.value)}
-                        className="rounded bg-white/5 p-2 text-sm text-white"
+                        className="rounded bg-zinc-800 border border-white/10 p-2 text-sm text-white focus:outline-none focus:border-red-500"
                       >
-                        <option value="power">Atak na elektrownie</option>
-                        <option value="strategic">Atak na obiekty strategiczne</option>
-                        <option value="hospitals">Atak na szpitale</option>
-                        <option value="war">Wojna — rakiety i wojska</option>
+                        <option value="war">Wojna — atak rakietowy (alarm + wojsko)</option>
+                        <option value="power">Atak na obiekty energetyczne (Blackout)</option>
+                        <option value="water_poison">Zatrucie ujęć wody i wodociągów (Skażenie)</option>
+                        <option value="comms_jamming">Zakłócenia radiowe i odcięcie światłowodów</option>
+                        <option value="bridges">Wysadzenie mostów i węzłów kolejowych</option>
+                        <option value="strategic">Atak dronów na obiekty strategiczne</option>
                       </select>
 
                       <div className="flex gap-2">
@@ -1853,28 +2158,30 @@ export default function LeafletMap() {
                           type="button"
                           disabled={simulationRunning}
                           onClick={() => runSimulation()}
-                          className={`rounded px-3 py-2 ${simulationRunning ? "bg-gray-500" : "bg-red-600 hover:bg-red-700"}`}
+                          className={`flex-1 rounded px-3 py-2 font-bold transition-colors ${simulationRunning ? "bg-zinc-700 text-zinc-400" : "bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-500/30"}`}
                         >
-                          {simulationRunning ? "Symulacja..." : "Uruchom"}
+                          {simulationRunning ? "Symulacja w toku..." : "Uruchom symulację"}
                         </button>
-                        <button type="button" onClick={stopSimulation} className="rounded px-3 py-2 bg-white/5">
-                          Stop
+                        <button type="button" onClick={stopSimulation} className="rounded px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-white/10 text-xs">
+                          Przerwij
                         </button>
                       </div>
 
-                      <label className="flex items-center gap-3 mt-2">
-                        <span className="text-xs text-zinc-300">Szybkość:</span>
-                        <input
-                          type="range"
-                          min={0.25}
-                          max={4}
-                          step={0.25}
-                          value={simulationSpeed}
-                          onChange={(e) => setSimulationSpeed(Number(e.target.value))}
-                          className="flex-1"
-                        />
-                        <span className="ml-2 font-mono text-sm">{simulationSpeed.toFixed(2)}x</span>
-                      </label>
+                      <div className="bg-zinc-800/50 p-2 rounded border border-white/5 mt-1">
+                        <label className="flex items-center gap-3">
+                          <span className="text-xs text-zinc-300">Szybkość:</span>
+                          <input
+                            type="range"
+                            min={0.25}
+                            max={4}
+                            step={0.25}
+                            value={simulationSpeed}
+                            onChange={(e) => setSimulationSpeed(Number(e.target.value))}
+                            className="flex-1 accent-red-500"
+                          />
+                          <span className="ml-1 font-mono text-sm w-8 text-right text-red-400">{simulationSpeed.toFixed(1)}x</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1883,57 +2190,67 @@ export default function LeafletMap() {
           </div>
         </div>
 
-        <aside className="w-1/3 p-4 overflow-auto pointer-events-auto bg-zinc-900/80 h-full">
-          <h2 className="text-lg font-semibold">City Status</h2>
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <div className="bg-white/5 p-3 rounded">
-              <div className="text-sm text-zinc-300">Resilience Score</div>
-              <div className="text-2xl font-bold">{(() => { const f=geojsonRef.current?.features; if(!f) return '—'; const vals=f.map(fe=>calculateFeatureRisk(fe,f,graphRef.current).value); const avg = Math.round(vals.reduce((a,b)=>a+b,0)/Math.max(1,vals.length)); return `${avg}/100`; })()}</div>
-            </div>
-            <div className="bg-white/5 p-3 rounded">
-              <div className="text-sm text-zinc-300">Active Alerts</div>
-              <div className="text-2xl font-bold">2</div>
-            </div>
-            <div className="bg-white/5 p-3 rounded">
-              <div className="text-sm text-zinc-300">Critical Nodes</div>
-              <div className="text-2xl font-bold">{(() => { const f=geojsonRef.current?.features; if(!f) return '—'; const vals=f.map(fe=>({v:calculateFeatureRisk(fe,f,graphRef.current).value, name:fe.properties?.name})).filter(x=>x.v>=80); return vals.length; })()}</div>
-            </div>
-            <div className="bg-white/5 p-3 rounded">
-              <div className="text-sm text-zinc-300">Infrastructure Availability</div>
-              <div className="text-2xl font-bold">97.2%</div>
-            </div>
-          </div>
+        <aside className="w-1/3 p-4 overflow-y-auto overflow-x-hidden pointer-events-auto bg-zinc-900/95 h-full border-l border-white/10 z-[500] relative">
+          <h2 className="text-lg font-semibold flex items-center justify-between">
+            <span>Centrum Dowodzenia Obroną</span>
+            <span className="text-xs font-normal bg-green-500/20 text-green-400 px-2 py-1 rounded border border-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.2)]">System aktywny</span>
+          </h2>
 
-          <h3 className="mt-4 font-semibold">Top Critical Objects</h3>
-          <table className="w-full text-sm mt-2 table-auto">
-            <thead><tr className="text-left"><th className="pb-2">Obiekt</th><th className="pb-2">Risk</th><th className="pb-2">Zależności</th><th className="pb-2">Backup</th></tr></thead>
-            <tbody>
-              {(() => { const f=geojsonRef.current?.features; if(!f) return null; const rows=f.map(fe=>({name:fe.properties?.name||'?', risk:calculateFeatureRisk(fe,f,graphRef.current).value, deps: (fe.properties?.tags?.dependency_count)||0, backup: fe.properties?.tags?.backup? '✅':'❌'})).sort((a,b)=>b.risk-a.risk).slice(0,6); return rows.map((r,i)=>(<tr key={i}><td className="py-1">{r.name}</td><td>{r.risk}</td><td>{r.deps}</td><td>{r.backup}</td></tr>)) })()
-              }
-            </tbody>
-          </table>
-
-          <h3 className="mt-4 font-semibold">Impact Analysis</h3>
-          <div className="bg-white/5 p-3 rounded text-sm mt-2">Kliknij obiekt na mapie, by zobaczyć analizę wpływu.</div>
-
-          <div className="mt-4">
-            <div className="text-sm font-semibold">Cascading Failure Simulation</div>
-            <div className="mt-2 text-sm">Kliknij obiekt na mapie, następnie użyj symulacji (panel na mapie) aby zobaczyć propagację awarii.</div>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="bg-zinc-800/80 border border-white/5 p-3 rounded shadow-inner">
+              <div className="text-xs text-zinc-400 uppercase tracking-wider">Odporność (Resilience)</div>
+              <div className={`text-2xl font-bold mt-1 ${cityPowerOutage ? 'text-red-500' : 'text-blue-400'}`}>
+                {(() => { const f=geojsonRef.current?.features; if(!f) return '—'; const vals=f.map(fe=>calculateFeatureRisk(fe,f,graphRef.current).value); const avg = Math.round(vals.reduce((a,b)=>a+b,0)/Math.max(1,vals.length)); return `${Math.max(0, 100-avg - (cityPowerOutage ? 40 : 0))}%`; })()}
+              </div>
+            </div>
+            <div className="bg-zinc-800/80 border border-white/5 p-3 rounded shadow-inner">
+              <div className="text-xs text-zinc-400 uppercase tracking-wider">Wykryte zagrożenia</div>
+              <div className="text-2xl font-bold mt-1 text-red-400 animate-pulse">{timelineEntries.length > 0 ? timelineEntries.filter(e => e.text.includes('Uszkodzenie')).length : 0}</div>
+            </div>
+            <div className="bg-zinc-800/80 border border-white/5 p-3 rounded shadow-inner relative overflow-hidden">
+              <div className="absolute -right-2 -top-2 text-4xl opacity-10">⚠️</div>
+              <div className="text-xs text-zinc-400 uppercase tracking-wider relative z-10">Single Point of Failure</div>
+              <div className="text-2xl font-bold mt-1 text-yellow-400 relative z-10">{(() => { const f=geojsonRef.current?.features; if(!f) return '—'; const vals=f.map(fe=>({v:calculateFeatureRisk(fe,f,graphRef.current).value, name:fe.properties?.name})).filter(x=>x.v>=80); return vals.length; })()}</div>
+            </div>
+            <div className="bg-zinc-800/80 border border-white/5 p-3 rounded shadow-inner">
+              <div className="text-xs text-zinc-400 uppercase tracking-wider">Dostępność sieci</div>
+              <div className={`text-2xl font-bold mt-1 ${cityPowerOutage ? 'text-red-500' : 'text-green-400'}`}>{cityPowerOutage ? '42%' : '99.9%'}</div>
+            </div>
           </div>
 
           <div className="mt-6">
-            <div className="text-sm font-semibold">Timeline / Event Stream</div>
-            <div className="bg-white/5 p-2 rounded mt-2 text-sm max-h-40 overflow-auto">
-              <ul>
-                {timelineEntries.length === 0 && (
-                  <li className="text-zinc-400">Brak zdarzeń</li>
-                )}
-                {timelineEntries.map((e, idx) => (
-                  <li key={idx}><span className="text-zinc-300">{e.ts}</span> - {e.text}</li>
-                ))}
-              </ul>
+            <div className="flex justify-between items-end mb-2 border-b border-white/10 pb-2">
+              <h3 className="font-semibold text-zinc-200 flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse"></span>
+                AI Agent: Ostrzeżenia na żywo
+              </h3>
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest bg-zinc-800 px-2 py-0.5 rounded">Real-time intel</span>
+            </div>
+
+            <div className="bg-zinc-950 p-3 rounded border border-zinc-800 mt-2 text-sm flex flex-col gap-3 h-[45vh] overflow-y-auto font-mono shadow-inner">
+              {timelineEntries.length === 0 && (
+                <div className="text-zinc-600 italic text-center py-8 flex flex-col items-center gap-2">
+                  <svg className="w-8 h-8 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                  <span>Oczekiwanie na dane z systemów telemetrycznych i radarów...</span>
+                </div>
+              )}
+              {timelineEntries.map((e, idx) => (
+                <div key={idx} className={`flex flex-col border border-white/5 rounded p-2 ${idx === 0 ? 'bg-zinc-900 shadow-[0_0_10px_rgba(0,0,0,0.5)]' : 'bg-transparent'}`}>
+                  <div className="flex gap-2">
+                    <span className="text-zinc-500 shrink-0 text-xs mt-0.5">[{e.ts}]</span>
+                    <span className={`text-zinc-200 ${e.text.includes('Zniszczenie') || e.text.includes('Krytyczne') ? 'text-red-400 font-bold' : ''}`}>{e.text}</span>
+                  </div>
+                  {e.ai && (
+                    <div className="ai-agent-message pl-3 ml-2 mt-2 bg-blue-900/10 py-1 rounded text-blue-300">
+                      <strong className="text-[10px] uppercase text-blue-500 tracking-wider">Analiza Predykcyjna AI</strong><br/>
+                      {e.ai}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
+
         </aside>
       </div>
 
