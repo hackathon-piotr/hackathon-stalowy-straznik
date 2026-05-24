@@ -573,6 +573,7 @@ export default function LeafletMap() {
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
   const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
   const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
+  const [warAlert, setWarAlert] = useState<{title:string; actions:string[]; targets:{name:string;prob:number;effect:string}[]} | null>(null);
 
   useEffect(() => {
     mapViewRef.current = mapView;
@@ -1109,9 +1110,9 @@ export default function LeafletMap() {
       if (!pos) return;
       const risk = calculateFeatureRisk(feature, features, graph);
       const severity = (risk?.value ?? 0) / 100;
-      const delay = i * 350;
+    const delay = i * 350 / (simulationSpeed || 1);
 
-      const type = attackType === "strategic" ? "rakieta" : "dron";
+    let type: "rakieta" | "dron" = attackType === "strategic" || attackType === "war" ? "rakieta" : "dron";
 
       const timeoutId = window.setTimeout(() => {
         const start = getStartPoint(pos);
@@ -1120,6 +1121,95 @@ export default function LeafletMap() {
 
       simulationTimersRef.current.push(timeoutId as unknown as number);
     });
+
+    // if war, also animate troop convoys and show large alert popup
+    if (attackType === "war") {
+    // helper: find nearest road feature (LineString) and return its first coord as start
+    function getNearestRoadStart(targetPos:[number,number]) {
+      let best: Feature<Geometry, GeoJsonProperties> | null = null;
+      let bestDist = Infinity;
+      features.forEach((f) => {
+        if (f.geometry?.type === "LineString") {
+          const tags = (f.properties?.tags ?? {}) as Record<string,string>;
+          if (tags.highway || tags.road || String(f.properties?.layer).includes("rail")) {
+            // compute distance to first coordinate
+            const coords = (f.geometry as any).coordinates as [number,number][];
+            const c = coords[0];
+            const d = getDistanceKm(targetPos, [c[1], c[0]]);
+            if (d < bestDist) { bestDist = d; best = f; }
+          }
+        }
+      });
+      if (!best) return getStartPoint(targetPos);
+      const coords = (best.geometry as any).coordinates as [number,number][];
+      const c = coords[0];
+      return [c[1], c[0]] as [number,number];
+    }
+
+    // animate convoy along a simple path (start -> via -> target)
+    async function animateConvoy(start:[number,number], via:[number,number] | null, target:[number,number]) {
+      const L = await import("leaflet");
+      const simLayer = simulationLayerRef.current as any;
+      const path = [start, via ?? target, target];
+      const marker = L.marker(start as LatLngExpression, { interactive: false, icon: L.divIcon({ html: '🚚', className: 'convoy-icon' }) }).addTo(simLayer);
+      const trail = L.polyline([start], { color: "#ffd86b", weight: 3, opacity: 0.9 }).addTo(simLayer);
+
+      const totalSteps = 200;
+      let step = 0;
+      const intervalId = window.setInterval(() => {
+        step += 1;
+        const t = step / totalSteps;
+        // simple linear interpolation along path
+        const seg = Math.min(1, t);
+        const curLat = start[0] + (target[0] - start[0]) * seg;
+        const curLng = start[1] + (target[1] - start[1]) * seg;
+        const cur:[number,number] = [curLat, curLng];
+        marker.setLatLng(cur as LatLngExpression);
+        trail.addLatLng(cur as LatLngExpression);
+        if (step >= totalSteps) {
+          window.clearInterval(intervalId);
+          try { simLayer.removeLayer(marker); } catch(e){}
+        }
+      }, 40 / (simulationSpeed || 1));
+      simulationTimersRef.current.push(intervalId as unknown as number);
+    }
+
+    // pick top 3 affected targets by risk
+    const sorted = affected
+      .map((f) => ({ f, r: calculateFeatureRisk(f, features, graph) }))
+      .sort((a,b)=> (b.r.value - a.r.value))
+      .slice(0,3);
+
+    sorted.forEach((s, idx) => {
+      const pos = getFeaturePosition(s.f);
+      if (!pos) return;
+      const start = getNearestRoadStart(pos);
+      const via = null; // could compute via road network
+      const t = window.setTimeout(() => animateConvoy(start, via, pos), 800 + idx * 1200 / (simulationSpeed || 1));
+      simulationTimersRef.current.push(t as unknown as number);
+    });
+
+    // prepare war alert popup content
+    const targetsInfo = affected.slice(0,5).map((f) => {
+      const risk = calculateFeatureRisk(f, features, graph);
+      const name = String(f.properties?.name ?? f.properties?.label ?? 'Obiekt');
+      let effect = "Niekontrolowane uszkodzenia";
+      const layer = String(f.properties?.layer ?? "");
+      if (layer.includes('bridge') || layer.includes('bridges')) effect = 'Most odcięty';
+      if (layer === 'power') effect = 'Brak prądu';
+      if (layer === 'hospitals') effect = 'Szpital na rezerwie lub offline';
+      return { name, prob: (risk.value/100), effect };
+    });
+
+    const actions = [
+      'Aktywuj procedury awaryjne',
+      'Włącz backupy i przełączniki',
+      'Ewakuuj miejsca o najwyższym ryzyku',
+      'Zabezpiecz mosty i szlaki komunikacyjne'
+    ];
+
+    setWarAlert({ title: 'ALERT: Wojna — atak w toku', actions, targets: targetsInfo });
+    }
 
     // cleanup after all animations
     const totalDuration = Math.max(3000, affected.length * 350 + 2500);
@@ -1247,6 +1337,7 @@ export default function LeafletMap() {
                         <option value="power">Atak na elektrownie</option>
                         <option value="strategic">Atak na obiekty strategiczne</option>
                         <option value="hospitals">Atak na szpitale</option>
+                        <option value="war">Wojna — rakiety i wojska</option>
                       </select>
 
                       <div className="flex gap-2">
