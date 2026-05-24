@@ -571,7 +571,7 @@ export default function LeafletMap() {
   const simulationTimersRef = useRef<number[]>([]);
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [selectedAttackType, setSelectedAttackType] = useState<string>("power");
-  const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
+  const [simulationSpeed, setSimulationSpeed] = useState<number>(10);
   const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
   const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
   const [showIssuesLayer, setShowIssuesLayer] = useState<boolean>(true);
@@ -1514,8 +1514,8 @@ export default function LeafletMap() {
     const delay = i * 250 / (simulationSpeed || 1);
 
     // boost simulation speed when running power/war simulations
-    if ((attackType === 'power' || attackType === 'war') && (simulationSpeed || 1) < 3) {
-      setSimulationSpeed(3);
+    if ((attackType === 'power' || attackType === 'war') && (simulationSpeed || 1) < 10) {
+      setSimulationSpeed(10);
     }
 
     let type: "rakieta" | "dron" = attackType === "strategic" || attackType === "war" ? "rakieta" : "dron";
