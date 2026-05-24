@@ -1173,7 +1173,7 @@ export default function LeafletMap() {
                 <button
                   type="button"
                   onClick={() => setShowLayersPanel((s) => !s)}
-                  className="bg-white/10 text-white px-3 py-2 rounded shadow"
+                  className="bg-zinc-800/95 text-white px-3 py-2 rounded shadow"
                 >
                   Warstwy
                 </button>
@@ -1211,7 +1211,7 @@ export default function LeafletMap() {
                 <button
                   type="button"
                   onClick={() => setShowSimPanel((s) => !s)}
-                  className="bg-white/10 text-white px-3 py-2 rounded shadow"
+                  className="bg-zinc-800/95 text-white px-3 py-2 rounded shadow"
                 >
                   Symulacje
                 </button>
