@@ -547,7 +547,16 @@ function getRiskBadgeHtml(risk: RiskScore) {
   return `<span class="${getRiskBadgeClass(risk)}">${risk.value}</span>`;
 }
 
+function getFeatureStatusHtml(feature: Feature<Geometry, GeoJsonProperties>) {
+  const fid = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? '');
+  const st = featureStatesRef.current[fid];
+  if (!st) return '';
+  const issuesHtml = st.issues && st.issues.length ? st.issues.map((i) => `<li>${escapeHtml(i)}</li>`).join('') : '<li>brak</li>';
+  return `<div class="feature-status"><strong>Stan: ${escapeHtml(st.status)} (${st.health}%)</strong><ul>${issuesHtml}</ul></div>`;
+}
+
 export default function LeafletMap() {
+
   const [mapView, setMapView] = useState<MapView>("standard");
   const [activeInfrastructureLayers, setActiveInfrastructureLayers] = useState(
     initialInfrastructureLayers,
@@ -573,6 +582,7 @@ export default function LeafletMap() {
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
   const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
   const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
+  const [showIssuesLayer, setShowIssuesLayer] = useState<boolean>(true);
   const [warAlert, setWarAlert] = useState<{title:string; actions:string[]; targets:{name:string;prob:number;effect:string}[]} | null>(null);
 
   // Alarm audio refs
@@ -906,9 +916,10 @@ export default function LeafletMap() {
             const riskHtml = showRiskScore
               ? getRiskPopupHtml(calculateFeatureRisk(feature, geojson.features, graph))
               : "";
+            const statusHtml = getFeatureStatusHtml(feature);
 
             leafletLayer.bindPopup(
-              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>${riskHtml}`,
+              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>${riskHtml}${statusHtml}`,
             );
           },
         });
@@ -1587,6 +1598,28 @@ export default function LeafletMap() {
                           <span className="truncate">{infrastructureLayers[layer].label}</span>
                         </label>
                       ))}
+
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={showIssuesLayer}
+                          onChange={() => {
+                            setShowIssuesLayer((s) => {
+                              const next = !s;
+                              if (next) {
+                                refreshIssuesLayer(mapInstance.current || undefined);
+                              } else {
+                                try { issuesLayerRef.current?.remove(); } catch (e) {}
+                                issuesLayerRef.current = null;
+                              }
+                              return next;
+                            });
+                          }}
+                          className="h-4 w-4 accent-red-500"
+                        />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: '#ff5f5f' }} />
+                        <span className="truncate">Problemy / Uszkodzenia</span>
+                      </label>
                     </div>
                   </div>
                 )}
