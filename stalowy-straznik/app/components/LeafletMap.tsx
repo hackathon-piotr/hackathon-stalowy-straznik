@@ -686,6 +686,29 @@ export default function LeafletMap() {
       const commsDown = Object.entries(featureStatesRef.current).filter(([_, s]) => s.issues.includes('comms_outage')).length;
       setCityPowerOutage(powerDown > 2);
       setCityCommsOutage(commsDown > 2);
+
+      // update popups for features so status and buttons reflect current issues/actions
+      try {
+        mapRef.eachLayer((layerItem:any) => {
+          if (!layerItem?.feature) return;
+          const f = layerItem.feature as Feature<Geometry, GeoJsonProperties>;
+          const layerName = String(f.properties?.layer ?? '');
+          // find config that matches this feature's layer
+          const cfgEntry = Object.entries(infrastructureLayers).find(([k, cfg]) => cfg.geojsonLayer === layerName);
+          if (!cfgEntry) return;
+          const [k, cfg] = cfgEntry as [string, any];
+          const newHtml = (typeof (window as any).buildPopupHtml === 'function') ? (window as any).buildPopupHtml(f, cfg, geojson, graphRef.current) : null;
+          if (newHtml) {
+            try {
+              if (layerItem.getPopup && layerItem.getPopup()) {
+                layerItem.getPopup().setContent(newHtml);
+              } else {
+                layerItem.bindPopup(newHtml);
+              }
+            } catch (e) {}
+          }
+        });
+      } catch (e) {}
     } catch (e) {
       // ignore
     }
@@ -1028,30 +1051,45 @@ export default function LeafletMap() {
             dashArray: layer === "rail" ? "7 5" : undefined,
           }),
           onEachFeature: (feature, leafletLayer) => {
-            const properties = feature.properties ?? {};
-            const name = properties.name ?? config.label;
-            const showRiskScore = [
-              "strategic",
-              "hospitals",
-              "power",
-              "bts",
-              "bridges",
-              "rail",
-            ].includes(String(properties.layer));
-            const riskHtml = showRiskScore
-              ? getRiskPopupHtml(calculateFeatureRisk(feature, geojson.features, graph))
-              : "";
-            const statusHtml = getFeatureStatusHtmlLocal(feature);
-            const fidEsc = escapeHtml(String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? ''));
-            const actionsHtml = `<div class="popup-actions"><button onclick="window.assignActionToFeature('${fidEsc}','fire')">🚒 Zaangażuj straż</button><button onclick="window.assignActionToFeature('${fidEsc}','military')">🪖 Mobilizuj</button><button onclick="window.assignActionToFeature('${fidEsc}','evac')">🏃‍♀️ Ewakuuj</button></div>`;
-
-            leafletLayer.bindPopup(
-              `<strong>${escapeHtml(config.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(config.source)}</small>${riskHtml}${statusHtml}${actionsHtml}`,
-            );
+            // initial binding uses builder so future refreshes can replace content
+            const popupHtml = buildPopupHtml(feature, config, geojson, graph);
+            leafletLayer.bindPopup(popupHtml);
           },
-        });
+         });
 
         const riskBadgeLayer = L.layerGroup();
+
+        // expose buildPopupHtml globally for refresh to call inside map layers
+        (window as any).buildPopupHtml = function(feature:any, cfg:any, geojsonAll:any, graphLocal:any) {
+          const properties = feature.properties ?? {};
+          const name = properties.name ?? cfg.label;
+          const showRiskScore = [
+            "strategic",
+            "hospitals",
+            "power",
+            "bts",
+            "bridges",
+            "rail",
+          ].includes(String(properties.layer));
+          const riskHtml = showRiskScore
+            ? getRiskPopupHtml(calculateFeatureRisk(feature, geojsonAll.features, graphLocal))
+            : "";
+
+          const statusHtml = getFeatureStatusHtmlLocal(feature);
+
+          const fid = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? '');
+          const fidEsc = escapeHtml(fid);
+          const actionsSet = featureActionsRef.current[fid] ?? new Set<string>();
+          const makeBtn = (act:string,label:string) => {
+            const disabled = actionsSet.has(act) ? 'disabled' : '';
+            return `<button ${disabled} onclick="window.assignActionToFeature('${fidEsc}','${act}')">${label}</button>`;
+          };
+
+          const actionsHtml = `<div class="popup-actions">${makeBtn('fire','🚒 Zaangażuj straż')}${makeBtn('military','🪖 Mobilizuj')}${makeBtn('evac','🏃‍♀️ Ewakuuj')}</div>`;
+
+          return `<strong>${escapeHtml(cfg.label)}</strong><br />${escapeHtml(name)}<br /><small>${escapeHtml(cfg.source)}</small>${riskHtml}${statusHtml}${actionsHtml}`;
+        };
+
 
         geojson.features
           .filter((feature) => feature.properties?.layer === config.geojsonLayer)
