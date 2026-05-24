@@ -1253,6 +1253,33 @@ export default function LeafletMap() {
         </div>
       </header>
 
+      {/* War alert modal */}
+      {warAlert && (
+        <div className="absolute inset-0 z-[2000] flex items-center justify-center pointer-events-auto">
+          <div className="bg-black/80 p-6 rounded-lg max-w-3xl text-white">
+            <div className="flex justify-between items-start">
+              <h2 className="text-xl font-bold">{warAlert.title}</h2>
+              <button onClick={() => setWarAlert(null)} className="ml-4 text-sm bg-white/10 px-2 py-1 rounded">Zamknij</button>
+            </div>
+            <div className="mt-4">
+              <div className="font-semibold">Zalecane działania</div>
+              <ul className="list-disc list-inside mt-2">
+                {warAlert.actions.map((a,i)=>(<li key={i}>{a}</li>))}
+              </ul>
+            </div>
+            <div className="mt-4">
+              <div className="font-semibold">Potencjalne cele</div>
+              <table className="w-full mt-2 text-sm">
+                <thead><tr><th className="text-left">Cel</th><th className="text-left">Prob.</th><th className="text-left">Skutki</th></tr></thead>
+                <tbody>
+                  {warAlert.targets.map((t,i)=>(<tr key={i}><td className="py-1">{t.name}</td><td>{Math.round(t.prob*100)}%</td><td>{t.effect}</td></tr>))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="w-2/3 border-r border-white/10 relative h-full overflow-hidden">
           <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
