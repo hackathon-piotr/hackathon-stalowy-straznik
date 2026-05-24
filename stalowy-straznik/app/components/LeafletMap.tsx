@@ -621,8 +621,132 @@ export default function LeafletMap() {
     } catch (e) {}
   }
 
-  // war action tracking
+  // war action tracking + feature damage state
   const [warActionsTaken, setWarActionsTaken] = useState<string[]>([]);
+
+  // feature runtime state (health, status, issues)
+  const featureStatesRef = useRef<Record<string, { health: number; status: string; issues: string[] }>>({});
+  const issuesLayerRef = useRef<Layer | null>(null);
+  const [cityPowerOutage, setCityPowerOutage] = useState<boolean>(false);
+  const [cityCommsOutage, setCityCommsOutage] = useState<boolean>(false);
+
+  function ensureFeatureState(feature: Feature<Geometry, GeoJsonProperties>) {
+    const id = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? Math.random());
+    if (!featureStatesRef.current[id]) {
+      featureStatesRef.current[id] = { health: 100, status: "ok", issues: [] };
+    }
+    return { id, state: featureStatesRef.current[id] };
+  }
+
+  function refreshIssuesLayer(map?: LeafletMapInstance) {
+    const mapRef = map || mapInstance.current;
+    const L = (window as any).L ?? null;
+    try {
+      // clear previous
+      if (issuesLayerRef.current) {
+        try { (issuesLayerRef.current as any).remove(); } catch (e) {}
+      }
+      const layer = L ? L.layerGroup() : null;
+      if (!layer || !L || !mapRef) return;
+
+      const geojson = geojsonRef.current;
+      if (!geojson) return;
+
+      Object.entries(featureStatesRef.current).forEach(([fid, st]) => {
+        if (!st.issues || !st.issues.length) return;
+        const f = geojson.features.find((ff) => String(ff.id ?? ff.properties?.id ?? ff.properties?.name) === fid);
+        if (!f) return;
+        const pos = getFeaturePosition(f);
+        if (!pos) return;
+        // choose icon by highest priority issue
+        const icons: Record<string,string> = { power_outage: '⚡', comms_outage: '📡', structural: '🧱' };
+        const icon = icons[st.issues[0]] ?? '⚠️';
+        const mk = L.marker(pos as LatLngExpression, { icon: L.divIcon({ html: icon, className: 'issue-icon' }), interactive: false });
+        mk.addTo(layer);
+      });
+
+      issuesLayerRef.current = layer;
+      layer.addTo(mapRef);
+
+      // compute city-level outages heuristically
+      const geo = geojson;
+      const powerDown = Object.entries(featureStatesRef.current).filter(([_, s]) => s.issues.includes('power_outage')).length;
+      const commsDown = Object.entries(featureStatesRef.current).filter(([_, s]) => s.issues.includes('comms_outage')).length;
+      setCityPowerOutage(powerDown > 2);
+      setCityCommsOutage(commsDown > 2);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function applyDamageToFeatureId(fid: string, severity: number) {
+    const geojson = geojsonRef.current;
+    if (!geojson) return;
+    const feature = geojson.features.find((f) => String(f.id ?? f.properties?.id ?? f.properties?.name) === fid);
+    if (!feature) return;
+    if (!featureStatesRef.current[fid]) {
+      featureStatesRef.current[fid] = { health: 100, status: 'ok', issues: [] };
+    }
+    const st = featureStatesRef.current[fid];
+
+    // compute damage
+    const damage = Math.round(severity * 60 + Math.random() * 25);
+    st.health = Math.max(0, st.health - damage);
+    if (st.health <= 0) {
+      st.status = 'destroyed';
+    } else if (st.health < 60) {
+      st.status = 'damaged';
+    } else {
+      st.status = 'partially_damaged';
+    }
+
+    // infer issues from layer/type
+    const layer = String(feature.properties?.layer ?? '').toLowerCase();
+    const issues = new Set(st.issues);
+    if (layer.includes('power') || (feature.properties?.tags && String(feature.properties.tags.power))) {
+      issues.add('power_outage');
+    }
+    if (layer.includes('bts') || layer.includes('fiber') || layer.includes('telekom') || layer.includes('siec')) {
+      issues.add('comms_outage');
+    }
+    if (layer.includes('bridge') || layer.includes('bridges') || layer.includes('rail') || layer.includes('fuel')) {
+      issues.add('structural');
+    }
+
+    featureStatesRef.current[fid].issues = Array.from(issues);
+
+    // propagate to dependent features via graph (simple heuristic)
+    const graph = graphRef.current;
+    if (graph) {
+      const node = findGraphNodeForFeature(feature, graph);
+      if (node) {
+        // find outgoing edges of type 'zasilany_przez' or 'zależny_od' and mark neighbors with reduced severity
+        const neighbors = graph.edges
+          .filter((e) => e.source === node.id || e.target === node.id)
+          .map((e) => (e.source === node.id ? e.target : e.source));
+        neighbors.slice(0, 4).forEach((nid, idx) => {
+          const neighborNode = graph.nodes.find((n) => n.id === nid);
+          if (!neighborNode) return;
+          // find corresponding feature
+          const maybeFeature = geojson.features.find((f) => {
+            const fid2 = String(f.id ?? f.properties?.id ?? f.properties?.name);
+            const fname = String(f.properties?.name ?? '').toLowerCase();
+            return (neighborNode.source && neighborNode.source.toLowerCase().includes(fid2.toLowerCase())) || neighborNode.name.toLowerCase() === fname;
+          });
+          if (maybeFeature) {
+            const fid2 = String(maybeFeature.id ?? maybeFeature.properties?.id ?? maybeFeature.properties?.name);
+            // apply smaller damage
+            const propagatedSeverity = Math.max(0.05, severity * (0.6 - idx * 0.12));
+            // schedule small delayed damage
+            window.setTimeout(() => { applyDamageToFeatureId(fid2, propagatedSeverity); refreshIssuesLayer(); }, 400 + idx * 300);
+          }
+        });
+      }
+    }
+
+    // refresh visual layer
+    refreshIssuesLayer();
+  }
 
   function takeWarAction(key: string) {
     if (!warAlert) return;
@@ -1091,7 +1215,7 @@ export default function LeafletMap() {
     }
 
     // animate projectile from start to target
-    function launchProjectile(start: [number, number], target: [number, number], type: "rakieta" | "dron", severity: number) {
+    function launchProjectile(start: [number, number], target: [number, number], type: "rakieta" | "dron", severity: number, featureId?: string) {
       const projectileIcon = L.divIcon({ html: type === "rakieta" ? "🚀" : "🛸", className: "projectile-icon" });
       const marker = L.marker(start as LatLngExpression, { icon: projectileIcon, interactive: false }).addTo(simLayer);
       const trail = L.polyline([start], { color: "#ffb86b", weight: 2, opacity: 0.9 }).addTo(simLayer);
@@ -1151,6 +1275,23 @@ export default function LeafletMap() {
             weight: 2,
           }).addTo(simLayer);
 
+          // apply damage to the feature (if provided) and refresh issue overlays
+          try {
+            if (featureId) {
+              applyDamageToFeatureId(String(featureId), severity);
+            } else {
+              // try to match feature by position (fallback)
+              const geojson = geojsonRef.current;
+              if (geojson) {
+                const fmatch = geojson.features.find((f) => {
+                  const pos = getFeaturePosition(f);
+                  return pos && Math.abs(pos[0] - (target as [number,number])[0]) < 0.0005 && Math.abs(pos[1] - (target as [number,number])[1]) < 0.0005;
+                });
+                if (fmatch) applyDamageToFeatureId(String(fmatch.id ?? fmatch.properties?.id ?? fmatch.properties?.name), severity);
+              }
+            }
+          } catch (e) {}
+
           const toId = window.setTimeout(() => {
             try {
               simLayer.removeLayer(damaged);
@@ -1176,7 +1317,8 @@ export default function LeafletMap() {
 
       const timeoutId = window.setTimeout(() => {
         const start = getStartPoint(pos);
-        launchProjectile(start, pos, type as "rakieta" | "dron", severity);
+        const fid = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? '');
+        launchProjectile(start, pos, type as "rakieta" | "dron", severity, fid);
       }, delay);
 
       simulationTimersRef.current.push(timeoutId as unknown as number);
