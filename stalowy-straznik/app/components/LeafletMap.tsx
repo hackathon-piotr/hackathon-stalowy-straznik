@@ -628,9 +628,19 @@ export default function LeafletMap() {
 
   // feature runtime state (health, status, issues)
   const featureStatesRef = useRef<Record<string, { health: number; status: string; issues: string[] }>>({});
+  const featureActionsRef = useRef<Record<string, Set<string>>>({}); // actions taken per feature
   const issuesLayerRef = useRef<Layer | null>(null);
   const [cityPowerOutage, setCityPowerOutage] = useState<boolean>(false);
   const [cityCommsOutage, setCityCommsOutage] = useState<boolean>(false);
+
+  // timeline / event log
+  const [timelineEntries, setTimelineEntries] = useState<Array<{ts:string;text:string}>>([]);
+
+  function pushTimelineEvent(text: string) {
+    const ts = new Date().toLocaleTimeString();
+    const entry = { ts, text };
+    setTimelineEntries((prev) => [entry, ...prev].slice(0, 200));
+  }
 
   function ensureFeatureState(feature: Feature<Geometry, GeoJsonProperties>) {
     const id = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? Math.random());
@@ -702,6 +712,9 @@ export default function LeafletMap() {
       st.status = 'partially_damaged';
     }
 
+    // push timeline event
+    pushTimelineEvent(`Uszkodzenie: ${feature.properties?.name ?? 'Obiekt'} (-${damage} HP). Nowy stan: ${st.status} ${st.health}%`);
+
     // infer issues from layer/type
     const layer = String(feature.properties?.layer ?? '').toLowerCase();
     const issues = new Set(st.issues);
@@ -717,19 +730,19 @@ export default function LeafletMap() {
 
     featureStatesRef.current[fid].issues = Array.from(issues);
 
-    // propagate to dependent features via graph (simple heuristic)
+    // propagate to dependent features via graph (weighted by edge confidence and type)
     const graph = graphRef.current;
     if (graph) {
       const node = findGraphNodeForFeature(feature, graph);
       if (node) {
-        // find outgoing edges of type 'zasilany_przez' or 'zależny_od' and mark neighbors with reduced severity
-        const neighbors = graph.edges
-          .filter((e) => e.source === node.id || e.target === node.id)
-          .map((e) => (e.source === node.id ? e.target : e.source));
-        neighbors.slice(0, 4).forEach((nid, idx) => {
-          const neighborNode = graph.nodes.find((n) => n.id === nid);
+        const connectedEdges = graph.edges.filter((e) => e.source === node.id || e.target === node.id);
+        const neighbors = connectedEdges
+          .map((e) => ({ edge: e, neighborId: e.source === node.id ? e.target : e.source }))
+          .slice(0, 6);
+
+        neighbors.forEach(({ edge, neighborId }, idx) => {
+          const neighborNode = graph.nodes.find((n) => n.id === neighborId);
           if (!neighborNode) return;
-          // find corresponding feature
           const maybeFeature = geojson.features.find((f) => {
             const fid2 = String(f.id ?? f.properties?.id ?? f.properties?.name);
             const fname = String(f.properties?.name ?? '').toLowerCase();
@@ -737,10 +750,16 @@ export default function LeafletMap() {
           });
           if (maybeFeature) {
             const fid2 = String(maybeFeature.id ?? maybeFeature.properties?.id ?? maybeFeature.properties?.name);
-            // apply smaller damage
-            const propagatedSeverity = Math.max(0.05, severity * (0.6 - idx * 0.12));
+            // parse confidence (if numeric string like '80' or '0.8')
+            let conf = 0.7;
+            try {
+              const num = parseFloat(edge.confidence?.toString() ?? '');
+              if (!Number.isNaN(num) && num > 0) conf = num > 1 ? num / 100 : num;
+            } catch (e) {}
+            const typeWeight = edge.type === 'zasilany_przez' ? 1.1 : edge.type === 'obsługuje' ? 1.0 : 0.85;
+            const propagatedSeverity = Math.max(0.03, severity * conf * typeWeight * Math.max(0.2, 0.6 - idx * 0.12));
             // schedule small delayed damage
-            window.setTimeout(() => { applyDamageToFeatureId(fid2, propagatedSeverity); refreshIssuesLayer(); }, 400 + idx * 300);
+            window.setTimeout(() => { applyDamageToFeatureId(fid2, propagatedSeverity); refreshIssuesLayer(); pushTimelineEvent(`Propagacja: ${maybeFeature.properties?.name ?? 'Obiekt'} otrzymuje uszkodzenia z powodu ${edge.type}`); }, 400 + idx * 300);
           }
         });
       }
@@ -773,9 +792,15 @@ export default function LeafletMap() {
   // allow popup buttons to assign immediate actions to a specific feature
   function assignActionToFeature(fid: string, action: string) {
     if (!fid) return;
+    if (!featureActionsRef.current[fid]) featureActionsRef.current[fid] = new Set<string>();
+    if (featureActionsRef.current[fid].has(action)) return; // already applied
+
     const mapping: Record<string,string> = { fire: 'Straż pożarna: wysłano do obiektu', military: 'Wojsko: wsparcie', evac: 'Ewakuacja: rozpoczęta' };
     const msg = mapping[action] ?? action;
     setWarActionsTaken((prev) => (prev.includes(msg) ? prev : [...prev, msg]));
+    pushTimelineEvent(`${msg} (do obiektu ${fid})`);
+
+    featureActionsRef.current[fid].add(action);
 
     if (!featureStatesRef.current[fid]) featureStatesRef.current[fid] = { health: 100, status: 'ok', issues: [] };
     const st = featureStatesRef.current[fid];
@@ -791,8 +816,31 @@ export default function LeafletMap() {
       if (!st.issues.includes('evacuated')) st.issues.push('evacuated');
     }
 
+    // visual feedback: animate assignment marker
+    (async () => {
+      try {
+        const L = await import('leaflet');
+        const geojson = geojsonRef.current;
+        if (!geojson) return;
+        const feature = geojson.features.find((f) => String(f.id ?? f.properties?.id ?? f.properties?.name) === fid);
+        const pos = feature ? getFeaturePosition(feature) : null;
+        if (!pos) return;
+        const simLayer = simulationLayerRef.current ?? (mapInstance.current ? L.layerGroup().addTo(mapInstance.current) : null);
+        if (!simLayer) return;
+        const anim = L.circleMarker(pos as LatLngExpression, { radius: 10, color: '#34d399', fillColor: '#34d399', fillOpacity: 0.9, className: 'assignment-marker' }).addTo(simLayer);
+        setTimeout(() => { try { simLayer.removeLayer(anim); } catch(e){} }, 2000);
+      } catch (e) {}
+    })();
+
     // refresh visuals
     refreshIssuesLayer(mapInstance.current || undefined);
+
+    // disable popup button if visible
+    try {
+      const selector = `button[onclick*="${fid}"][onclick*="${action}"]`;
+      const btn = document.querySelector(selector) as HTMLButtonElement | null;
+      if (btn) btn.disabled = true;
+    } catch (e) {}
   }
 
   // expose to popup onclick handlers
@@ -1809,10 +1857,12 @@ export default function LeafletMap() {
             <div className="text-sm font-semibold">Timeline / Event Stream</div>
             <div className="bg-white/5 p-2 rounded mt-2 text-sm max-h-40 overflow-auto">
               <ul>
-                <li>12:01 - Water pressure anomaly</li>
-                <li>12:04 - Backup power activated</li>
-                <li>12:08 - Network rerouted</li>
-                <li>12:15 - Incident resolved</li>
+                {timelineEntries.length === 0 && (
+                  <li className="text-zinc-400">Brak zdarzeń</li>
+                )}
+                {timelineEntries.map((e, idx) => (
+                  <li key={idx}><span className="text-zinc-300">{e.ts}</span> - {e.text}</li>
+                ))}
               </ul>
             </div>
           </div>
