@@ -1321,18 +1321,21 @@ export default function LeafletMap() {
             <div className="text-sm font-semibold">Cascading Failure Simulation</div>
             <div className="mt-2 text-sm">Kliknij obiekt na mapie, następnie użyj symulacji (panel na mapie) aby zobaczyć propagację awarii.</div>
           </div>
+
+          <div className="mt-6">
+            <div className="text-sm font-semibold">Timeline / Event Stream</div>
+            <div className="bg-white/5 p-2 rounded mt-2 text-sm max-h-40 overflow-auto">
+              <ul>
+                <li>12:01 - Water pressure anomaly</li>
+                <li>12:04 - Backup power activated</li>
+                <li>12:08 - Network rerouted</li>
+                <li>12:15 - Incident resolved</li>
+              </ul>
+            </div>
+          </div>
         </aside>
       </div>
 
-      <footer className="h-28 border-t border-white/10 bg-zinc-950/95 p-3 overflow-auto">
-        <div className="font-semibold mb-2">Timeline / Event Stream</div>
-        <ul className="text-sm">
-          <li>12:01 - Water pressure anomaly</li>
-          <li>12:04 - Backup power activated</li>
-          <li>12:08 - Network rerouted</li>
-          <li>12:15 - Incident resolved</li>
-        </ul>
-      </footer>
     </main>
   );
 }
