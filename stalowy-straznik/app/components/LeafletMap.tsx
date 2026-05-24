@@ -1163,8 +1163,8 @@ export default function LeafletMap() {
         </div>
       </header>
 
-      <div className="flex flex-1">
-        <div className="w-2/3 border-r border-white/10 relative">
+      <div className="flex flex-1 min-h-0">
+        <div className="w-2/3 border-r border-white/10 relative min-h-0 overflow-hidden">
           <div ref={mapElement} className="w-full h-full" aria-label="Mapa główna" />
 
           <div className="absolute right-6 top-6 z-[1000] pointer-events-auto">
@@ -1284,7 +1284,7 @@ export default function LeafletMap() {
           </div>
         </div>
 
-        <aside className="w-1/3 p-4 overflow-y-auto pointer-events-auto bg-zinc-900/80">
+        <aside className="w-1/3 p-4 overflow-y-auto pointer-events-auto bg-zinc-900/80 max-h-full">
           <h2 className="text-lg font-semibold">City Status</h2>
           <div className="grid grid-cols-2 gap-3 mt-3">
             <div className="bg-white/5 p-3 rounded">
