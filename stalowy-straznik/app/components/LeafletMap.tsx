@@ -684,7 +684,8 @@ export default function LeafletMap() {
       const geo = geojson;
       const powerDown = Object.entries(featureStatesRef.current).filter(([_, s]) => s.issues.includes('power_outage')).length;
       const commsDown = Object.entries(featureStatesRef.current).filter(([_, s]) => s.issues.includes('comms_outage')).length;
-      setCityPowerOutage(powerDown > 2);
+      // if any major power node is down, mark city-level outage (more aggressive)
+      setCityPowerOutage(powerDown >= 1);
       setCityCommsOutage(commsDown > 2);
 
       // update popups for features so status and buttons reflect current issues/actions
@@ -785,6 +786,27 @@ export default function LeafletMap() {
             window.setTimeout(() => { applyDamageToFeatureId(fid2, propagatedSeverity); refreshIssuesLayer(); pushTimelineEvent(`Propagacja: ${maybeFeature.properties?.name ?? 'Obiekt'} otrzymuje uszkodzenia z powodu ${edge.type}`); }, 400 + idx * 300);
           }
         });
+
+        // immediate stronger effects for power plant destruction
+        if (layer.includes('power') && st.status === 'destroyed') {
+          pushTimelineEvent(`Krytyczne: elektrownia zniszczona - natychmiastowe skutki dla zależnych obiektów.`);
+          const depEdges = graph.edges.filter((e) => e.source === node.id || e.target === node.id);
+          depEdges.forEach((e) => {
+            const neighborId = e.source === node.id ? e.target : e.source;
+            const neighborNode = graph.nodes.find((n) => n.id === neighborId);
+            if (!neighborNode) return;
+            const maybeFeature2 = geojson.features.find((f) => {
+              const fid2 = String(f.id ?? f.properties?.id ?? f.properties?.name);
+              const fname = String(f.properties?.name ?? '').toLowerCase();
+              return (neighborNode.source && neighborNode.source.toLowerCase().includes(fid2.toLowerCase())) || neighborNode.name.toLowerCase() === fname;
+            });
+            if (maybeFeature2) {
+              const fid2 = String(maybeFeature2.id ?? maybeFeature2.properties?.id ?? maybeFeature2.properties?.name);
+              // immediate outage: apply higher severity
+              try { applyDamageToFeatureId(fid2, Math.max(0.2, severity * 0.9)); } catch (e) {}
+            }
+          });
+        }
       }
     }
 
@@ -1398,8 +1420,10 @@ export default function LeafletMap() {
 
       const distance = L.latLng(start).distanceTo(L.latLng(target)); // meters
       const speed = type === "rakieta" ? 600 : 60; // m/s
-      const durationMs = Math.max(500, (distance / speed) * 1000);
-      const steps = Math.max(20, Math.ceil(durationMs / 40));
+      // respect simulationSpeed parameter (passed in) to speed up animations
+      const simSpeed = typeof (arguments as any)[5] !== 'undefined' ? (arguments as any)[5] : (simulationSpeed || 1);
+      const durationMs = Math.max(300, (distance / speed) * 1000) / Math.max(1, simSpeed);
+      const steps = Math.max(12, Math.ceil(durationMs / 30));
       let step = 0;
 
       const intervalId = window.setInterval(() => {
@@ -1487,14 +1511,20 @@ export default function LeafletMap() {
       if (!pos) return;
       const risk = calculateFeatureRisk(feature, features, graph);
       const severity = (risk?.value ?? 0) / 100;
-    const delay = i * 350 / (simulationSpeed || 1);
+    const delay = i * 250 / (simulationSpeed || 1);
+
+    // boost simulation speed when running power/war simulations
+    if ((attackType === 'power' || attackType === 'war') && (simulationSpeed || 1) < 3) {
+      setSimulationSpeed(3);
+    }
 
     let type: "rakieta" | "dron" = attackType === "strategic" || attackType === "war" ? "rakieta" : "dron";
 
       const timeoutId = window.setTimeout(() => {
         const start = getStartPoint(pos);
         const fid = String(feature.id ?? feature.properties?.id ?? feature.properties?.name ?? '');
-        launchProjectile(start, pos, type as "rakieta" | "dron", severity, fid);
+        // pass explicit sim speed to make projectiles faster
+        launchProjectile(start, pos, type as "rakieta" | "dron", severity, fid, Math.max(1, simulationSpeed || 1));
       }, delay);
 
       simulationTimersRef.current.push(timeoutId as unknown as number);
