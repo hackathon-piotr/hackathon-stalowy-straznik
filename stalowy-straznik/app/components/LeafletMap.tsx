@@ -572,6 +572,7 @@ export default function LeafletMap() {
   const [selectedAttackType, setSelectedAttackType] = useState<string>("power");
   const [simulationSpeed, setSimulationSpeed] = useState<number>(1);
   const [showLayersPanel, setShowLayersPanel] = useState<boolean>(false);
+  const [showSimPanel, setShowSimPanel] = useState<boolean>(false);
 
   useEffect(() => {
     mapViewRef.current = mapView;
@@ -1168,41 +1169,102 @@ export default function LeafletMap() {
 
           <div className="absolute left-6 top-6 z-[1000] pointer-events-auto">
             <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => setShowLayersPanel((s) => !s)}
-                className="bg-white/10 text-white px-3 py-2 rounded shadow"
-              >
-                Warstwy
-              </button>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowLayersPanel((s) => !s)}
+                  className="bg-white/10 text-white px-3 py-2 rounded shadow"
+                >
+                  Warstwy
+                </button>
 
-              {showLayersPanel && (
-                <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-semibold">Warstwy</div>
-                    <button type="button" onClick={() => setShowLayersPanel(false)} className="text-xs text-zinc-300">Zamknij</button>
+                {showLayersPanel && (
+                  <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-semibold">Warstwy</div>
+                      <button type="button" onClick={() => setShowLayersPanel(false)} className="text-xs text-zinc-300">Zamknij</button>
+                    </div>
+                    <div className="flex flex-col gap-2 text-zinc-100">
+                      {infrastructureLayerKeys.map((layer) => (
+                        <label key={layer} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={activeInfrastructureLayers[layer]}
+                            onChange={() =>
+                              setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
+                            }
+                            className="h-4 w-4 accent-red-500"
+                          />
+                          <span
+                            className="h-3 w-3 rounded-full"
+                            style={{ backgroundColor: infrastructureLayers[layer].color }}
+                          />
+                          <span className="truncate">{infrastructureLayers[layer].label}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-2 text-zinc-100">
-                    {infrastructureLayerKeys.map((layer) => (
-                      <label key={layer} className="flex items-center gap-2">
+                )}
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowSimPanel((s) => !s)}
+                  className="bg-white/10 text-white px-3 py-2 rounded shadow"
+                >
+                  Symulacje
+                </button>
+
+                {showSimPanel && (
+                  <div className="bg-zinc-900/95 text-white p-3 rounded mt-2 text-sm shadow-2xl border border-white/10 w-[280px]">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-semibold">Symulacje</div>
+                      <button type="button" onClick={() => setShowSimPanel(false)} className="text-xs text-zinc-300">Zamknij</button>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <select
+                        value={selectedAttackType}
+                        onChange={(e) => setSelectedAttackType(e.target.value)}
+                        className="rounded bg-white/5 p-2 text-sm text-white"
+                      >
+                        <option value="power">Atak na elektrownie</option>
+                        <option value="strategic">Atak na obiekty strategiczne</option>
+                        <option value="hospitals">Atak na szpitale</option>
+                      </select>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={simulationRunning}
+                          onClick={() => runSimulation()}
+                          className={`rounded px-3 py-2 ${simulationRunning ? "bg-gray-500" : "bg-red-600 hover:bg-red-700"}`}
+                        >
+                          {simulationRunning ? "Symulacja..." : "Uruchom"}
+                        </button>
+                        <button type="button" onClick={stopSimulation} className="rounded px-3 py-2 bg-white/5">
+                          Stop
+                        </button>
+                      </div>
+
+                      <label className="flex items-center gap-3 mt-2">
+                        <span className="text-xs text-zinc-300">Szybkość:</span>
                         <input
-                          type="checkbox"
-                          checked={activeInfrastructureLayers[layer]}
-                          onChange={() =>
-                            setActiveInfrastructureLayers((cur) => ({ ...cur, [layer]: !cur[layer] }))
-                          }
-                          className="h-4 w-4 accent-red-500"
+                          type="range"
+                          min={0.25}
+                          max={4}
+                          step={0.25}
+                          value={simulationSpeed}
+                          onChange={(e) => setSimulationSpeed(Number(e.target.value))}
+                          className="flex-1"
                         />
-                        <span
-                          className="h-3 w-3 rounded-full"
-                          style={{ backgroundColor: infrastructureLayers[layer].color }}
-                        />
-                        <span className="truncate">{infrastructureLayers[layer].label}</span>
+                        <span className="ml-2 font-mono text-sm">{simulationSpeed.toFixed(2)}x</span>
                       </label>
-                    ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
